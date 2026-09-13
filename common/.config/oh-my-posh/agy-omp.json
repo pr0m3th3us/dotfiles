@@ -1,0 +1,50 @@
+{
+  "version": 3,
+  "palette": {
+    "gemini_blue": "#AECBFA",
+    "indigo": "#6366F1",
+    "darkblue": "#1E3A8A",
+    "slate": "#1E293B",
+    "charcoal": "#2B2B2B",
+    "warn_yellow": "#EAB308",
+    "alert_red": "#EF4444",
+    "darktext": "#111827",
+    "whitetext": "#FFFFFF"
+  },
+  "blocks": [
+    {
+      "type": "prompt",
+      "alignment": "left",
+      "segments": [
+        {
+          "type": "antigravity",
+          "style": "diamond",
+          "leading_diamond": "\ue0b6",
+          "foreground": "p:darktext",
+          "background": "p:gemini_blue",
+          "template": " \uf135 {{ .Model.DisplayName }}{{ if .PlanTier }} ({{ .PlanTier }}){{ end }}{{ if .ExecutionMode }} [\udb83\ude0b {{ .ExecutionMode }}]{{ end }} "
+        },
+        {
+          "type": "antigravity",
+          "style": "powerline",
+          "powerline_symbol": "\ue0b0",
+          "foreground": "p:whitetext",
+          "background": "p:indigo",
+          "background_templates": [
+            "{{ if gt .TokenUsagePercent 80.0 }}p:alert_red{{ end }}",
+            "{{ if and (gt .TokenUsagePercent 60.0) (le .TokenUsagePercent 80.0) }}p:warn_yellow{{ end }}"
+          ],
+          "template": " \uf2d0 {{ .TokenGauge }} {{ .TokenUsagePercent }}%{{ if .FormattedTokens }} ({{ .FormattedTokens }}){{ end }} "
+        },
+        {
+          "type": "antigravity",
+          "style": "diamond",
+          "trailing_diamond": "\ue0b4",
+          "foreground": "p:whitetext",
+          "background": "p:slate",
+          "template": " {{ if gt .ArtifactCount 0 }}\udb80\ude19 {{ .ArtifactCount }} {{ end }}{{ if gt .TaskCount 0 }}\udb80\udcb2 {{ .TaskCount }} {{ end }}{{ if .ToolConfirmationPending }}\udb80\udefc Confirm {{ end }}{{ range $k, $v := .Quota }}{{ if $v.RemainingFraction }}| {{ $k }}: {{ printf \"%.0f%%\" (mulf $v.RemainingFraction 100) }} {{ end }}{{ end }}{{ if and (not (gt .ArtifactCount 0)) (not (gt .TaskCount 0)) (not .ToolConfirmationPending) (not .Quota) }}\u2726 agy {{ end }}"
+        }
+      ]
+    }
+  ]
+}

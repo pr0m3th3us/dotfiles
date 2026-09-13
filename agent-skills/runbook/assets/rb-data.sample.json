@@ -1,0 +1,273 @@
+{
+  "id": "sample-runbook",
+  "title": "Sample Runbook",
+  "subject": "A structurally complete example — every field the scaffold renders",
+  "summary": "This is not a real runbook. It exists so the scaffold can be rendered and checked without inventing content, and so a new runbook can be written by replacing the values rather than guessing the shape. Every field described in <code class=\"inl\">references/runbook-spec.md</code> appears at least once below.",
+  "currency": "USD",
+  "theme": { "accent": "#3f5d8f" },
+  "chips": [
+    { "label": "Platform", "value": "Ubuntu 24.04" },
+    { "label": "Runtime", "value": "Node 22 LTS" },
+    { "label": "Host", "value": "Single VPS" }
+  ],
+  "leads": [
+    {
+      "title": "Two things to know before step one",
+      "body": [
+        "<strong>This is sample content.</strong> The prose fields accept inline HTML — <em>emphasis</em>, <code class=\"inl\">inline code</code>, and <a href=\"#p1\">links to phases</a> all work. Titles and labels are escaped instead, so write those as plain text.",
+        "<strong>Ids are the progress keys.</strong> Renaming a step id orphans whatever the reader had already ticked, which is why new steps get appended or given a suffixed id like <code class=\"inl\">p1.2b</code> rather than renumbering the ones after them."
+      ],
+      "items": [
+        "Phases run top to bottom; steps inside a phase are sequential by construction.",
+        "Cross-phase ordering is declared per step with <code class=\"inl\">dependsOn</code>."
+      ]
+    }
+  ],
+  "claudeBudget": {
+    "title": "Working through this with Claude",
+    "note": "Order-of-magnitude figures for the phases marked for tandem work. They measure the conversation, not the setup — a single stubborn failure can cost more than several clean phases.",
+    "ratePerMTok": 12
+  },
+  "phases": [
+    {
+      "id": "p0",
+      "num": "00",
+      "title": "Pre-flight",
+      "titleText": "Pre-flight",
+      "intent": "Confirm the machine can actually do the work before installing anything on it. Every hour lost to a long build is lost here, discovering a missing prerequisite at hour nine.",
+      "parallel": false,
+      "claudeTokens": 15000,
+      "claudeMode": "solo, ask if stuck",
+      "steps": [
+        {
+          "id": "p0.1",
+          "title": "Check the toolchain versions",
+          "kind": "action",
+          "do": "Run the version check below. If any tool is missing, install it before going further.",
+          "priority": 3,
+          "minutes": 5,
+          "where": "Ubuntu",
+          "why": "Later phases assume a modern Node and a working git. Finding out otherwise in phase 02 means unwinding a partial install.",
+          "commands": [
+            { "code": "node -v && git --version && curl --version | head -1" }
+          ],
+          "verify": {
+            "code": "node -v",
+            "expect": "v20.x or newer. If Node is missing entirely: <code class=\"inl\">sudo apt install -y nodejs</code>."
+          }
+        },
+        {
+          "id": "p0.2",
+          "title": "Read how the disk is laid out",
+          "kind": "info",
+          "do": "Nothing to execute. This step exists so the paths used later in the runbook are not a surprise.",
+          "priority": 1,
+          "minutes": 3,
+          "where": "Ubuntu",
+          "notes": [
+            "Application code lives under <code class=\"inl\">/srv/app</code>.",
+            "Anything under <code class=\"inl\">/tmp</code> is assumed disposable between phases."
+          ],
+          "table": {
+            "head": ["Path", "Holds", "Backed up"],
+            "rows": [
+              ["<code class=\"inl\">/srv/app</code>", "Application code and build output", "Yes"],
+              ["<code class=\"inl\">/var/lib/db</code>", "Database data directory", "Yes"],
+              ["<code class=\"inl\">/tmp/build</code>", "Scratch space for builds", "No"]
+            ]
+          }
+        },
+        {
+          "id": "p0.3",
+          "title": "Decide whether to keep the existing database",
+          "kind": "decide",
+          "do": "Decide now: migrate the existing data, or start clean. Write the answer down — phase 02 branches on it.",
+          "priority": 3,
+          "minutes": 10,
+          "where": "Browser",
+          "why": "Both routes are reasonable, but switching between them after phase 02 means redoing the schema work.",
+          "callouts": [
+            {
+              "kind": "warn",
+              "title": "Hard to undo",
+              "body": [
+                "Starting clean drops the existing rows. Take a dump first even if you are confident: <code class=\"inl\">pg_dump app &gt; ~/app-backup.sql</code>."
+              ]
+            }
+          ]
+        }
+      ],
+      "verification": {
+        "title": "You are ready to start when both of these are true.",
+        "code": "node -v && test -d /srv/app && echo 'paths ok'",
+        "expect": "A version string followed by <code class=\"inl\">paths ok</code>, and a written answer to the database question."
+      }
+    },
+    {
+      "id": "p1",
+      "num": "01",
+      "title": "Provision the host",
+      "titleText": "Provision the host",
+      "intent": "Get a reachable machine with the right ports open, so the deploy in phase 02 has somewhere to land.",
+      "parallel": false,
+      "dependsOn": ["p0"],
+      "claudeTokens": 40000,
+      "claudeMode": "tandem",
+      "steps": [
+        {
+          "id": "p1.1",
+          "title": "Create the server instance",
+          "kind": "action",
+          "do": "Create a small instance in the region closest to your users, and record its IP address.",
+          "priority": 3,
+          "minutes": 15,
+          "where": "Browser",
+          "cost": { "amount": 6, "note": "/month" },
+          "why": "The smallest tier is enough for the build; resizing later is a reboot, not a rebuild, so start cheap.",
+          "callouts": [
+            {
+              "kind": "info",
+              "title": "Region matters more than size",
+              "body": [
+                "Latency to your users is set at creation time and cannot be changed without rebuilding. Instance size can be changed in a minute."
+              ]
+            }
+          ],
+          "verify": {
+            "code": "ping -c 1 <your-server-ip>",
+            "expect": "One reply. If it times out, ICMP may simply be blocked — try SSH instead before assuming the host is down."
+          }
+        },
+        {
+          "id": "p1.2",
+          "title": "Open only the ports you need",
+          "kind": "action",
+          "do": "Allow 22, 80 and 443. Deny everything else inbound.",
+          "priority": 3,
+          "minutes": 10,
+          "where": "Ubuntu",
+          "why": "A default-open host gets found by scanners within hours. This is cheap now and expensive to retrofit after a compromise.",
+          "commands": [
+            {
+              "caption": "run as root",
+              "code": "ufw default deny incoming\nufw default allow outgoing\nufw allow 22/tcp\nufw allow 80,443/tcp\nufw --force enable"
+            }
+          ],
+          "verify": {
+            "code": "ufw status verbose",
+            "expect": "Status active, default deny (incoming), and exactly three allow rules."
+          }
+        },
+        {
+          "id": "p1.3",
+          "title": "Point the domain at the server",
+          "kind": "blocked",
+          "do": "Blocked until the instance above exists and has an IP. Once it does, add an A record for the apex domain.",
+          "priority": 2,
+          "minutes": 10,
+          "where": "Browser",
+          "why": "DNS propagation is the slowest thing in this runbook, so it is started early even though nothing depends on it until the final phase."
+        },
+        {
+          "id": "p1.4",
+          "title": "SSH key was already added during signup",
+          "kind": "done",
+          "do": "Nothing to do — this was completed when the account was created. It is listed so the picture is complete.",
+          "priority": 3,
+          "minutes": 0,
+          "where": "Ubuntu"
+        }
+      ],
+      "verification": {
+        "title": "The host is ready when you can reach it and nothing else can.",
+        "code": "ssh -o BatchMode=yes root@<your-server-ip> 'ufw status | head -1'",
+        "expect": "A login with no password prompt, printing <code class=\"inl\">Status: active</code>."
+      }
+    },
+    {
+      "id": "p2",
+      "num": "02",
+      "title": "Deploy and verify",
+      "titleText": "Deploy and verify",
+      "intent": "Put the application on the host and prove it serves traffic, so the runbook ends on evidence rather than assumption.",
+      "parallel": true,
+      "dependsOn": ["p1"],
+      "steps": [
+        {
+          "id": "p2.1",
+          "title": "Build and copy the release",
+          "kind": "action",
+          "do": "Build locally, then copy the output to <code>/srv/app</code> on the server.",
+          "priority": 3,
+          "minutes": 20,
+          "where": "Ubuntu",
+          "dependsOn": ["p1.2"],
+          "why": "Building on the small instance is slower than building locally and copying the result, and it keeps build tooling off the production host.",
+          "commands": [
+            { "code": "npm ci && npm run build" },
+            { "caption": "then, from the same directory", "code": "rsync -avz --delete dist/ root@<your-server-ip>:/srv/app/" }
+          ],
+          "notes": [
+            "<code class=\"inl\">--delete</code> removes files on the server that are no longer in the build. That is intentional — stale assets are a common source of confusing cache behaviour."
+          ]
+        },
+        {
+          "id": "p2.2",
+          "title": "Confirm the site answers over HTTPS",
+          "kind": "action",
+          "do": "Request the homepage over HTTPS and confirm a 200 with a valid certificate.",
+          "priority": 3,
+          "minutes": 5,
+          "where": "Ubuntu",
+          "dependsOn": ["p1.3"],
+          "commands": [
+            { "code": "curl -sSI https://<your-domain>/ | head -3" }
+          ],
+          "verify": {
+            "code": "curl -sS -o /dev/null -w '%{http_code} %{ssl_verify_result}\\n' https://<your-domain>/",
+            "expect": "<code class=\"inl\">200 0</code>. A non-zero second number means the certificate did not verify — usually DNS has not fully propagated yet."
+          }
+        }
+      ],
+      "verification": {
+        "title": "The deploy is real when a fresh browser can load it.",
+        "code": "curl -sS -o /dev/null -w '%{http_code}\\n' https://<your-domain>/",
+        "expect": "200, and the page loads in a private window with no certificate warning."
+      }
+    }
+  ],
+  "completion": {
+    "title": "The whole runbook is done when this one command tells you so.",
+    "code": "node -v && ufw status | head -1 && curl -sS -o /dev/null -w '%{http_code}\\n' https://<your-domain>/",
+    "expect": "A Node version, <code class=\"inl\">Status: active</code>, and <code class=\"inl\">200</code> — in that order, with no errors between them."
+  },
+  "gotchas": [
+    {
+      "symptom": "<code class=\"inl\">curl</code> returns 000 and hangs for a while first",
+      "cause": "The firewall is enabled but the port rule was never added, so packets are dropped rather than refused",
+      "fix": "Check <code class=\"inl\">ufw status verbose</code>. A dropped connection times out; a refused one fails immediately — the delay itself tells you which."
+    },
+    {
+      "symptom": "The certificate is invalid in the browser but <code class=\"inl\">curl</code> is happy",
+      "cause": "The certificate covers the apex domain but the browser was pointed at the <code class=\"inl\">www</code> subdomain",
+      "fix": "Issue the certificate for both names, or redirect one to the other at the web server."
+    },
+    {
+      "symptom": "Old assets keep being served after a deploy",
+      "cause": "<code class=\"inl\">rsync</code> was run without <code class=\"inl\">--delete</code>, leaving previous build output in place",
+      "fix": "Re-run the copy with <code class=\"inl\">--delete</code>, then hard-reload. Content-hashed filenames make this mostly invisible until it is not."
+    }
+  ],
+  "outOfScope": {
+    "title": "Deliberately not in this runbook",
+    "body": [
+      "These are all reasonable next steps, and none of them are needed to reach the completion check above. They are listed so their absence reads as a decision rather than an oversight."
+    ],
+    "items": [
+      "Monitoring and alerting — worth doing, but it needs a running service to watch first.",
+      "A second environment for staging — the same steps, run twice, with different names.",
+      "Automated deploys from CI — start by deploying by hand until the steps are boring."
+    ]
+  },
+  "footer": "Sample data for the runbook scaffold · rebuild with <code class=\"inl\">scripts/build_runbook.py</code>."
+}

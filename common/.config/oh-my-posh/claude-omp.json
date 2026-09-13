@@ -1,0 +1,50 @@
+{
+  "version": 3,
+  "palette": {
+    "claude_orange": "#D97706",
+    "indigo": "#6366F1",
+    "darkblue": "#1E3A8A",
+    "slate": "#1E293B",
+    "charcoal": "#2B2B2B",
+    "warn_yellow": "#EAB308",
+    "alert_red": "#EF4444",
+    "darktext": "#111827",
+    "whitetext": "#FFFFFF"
+  },
+  "blocks": [
+    {
+      "type": "prompt",
+      "alignment": "left",
+      "segments": [
+        {
+          "type": "claude",
+          "style": "diamond",
+          "leading_diamond": "\ue0b6",
+          "foreground": "p:whitetext",
+          "background": "p:claude_orange",
+          "template": " \udb82\udfc9 {{ .Model.DisplayName }}{{ if .Effort }} [{{ .Effort.Level }}]{{ end }}{{ if .Thinking.Enabled }} \udb81\ude25{{ end }} "
+        },
+        {
+          "type": "claude",
+          "style": "powerline",
+          "powerline_symbol": "\ue0b0",
+          "foreground": "p:whitetext",
+          "background": "p:indigo",
+          "background_templates": [
+            "{{ if gt .TokenUsagePercent 80.0 }}p:alert_red{{ end }}",
+            "{{ if and (gt .TokenUsagePercent 60.0) (le .TokenUsagePercent 80.0) }}p:warn_yellow{{ end }}"
+          ],
+          "template": " \uf2d0 {{ .TokenGauge }} {{ .TokenUsagePercent }}%{{ if .FormattedTokens }} ({{ .FormattedTokens }}){{ end }} "
+        },
+        {
+          "type": "claude",
+          "style": "diamond",
+          "trailing_diamond": "\ue0b4",
+          "foreground": "p:whitetext",
+          "background": "p:slate",
+          "template": " {{ if .FormattedCost }}\udb81\udcc3 {{ .FormattedCost }}{{ end }}{{ if .FormattedDuration }} | \udb80\udf56 {{ .FormattedDuration }}{{ end }}{{ if .FiveHourUsage }} | 5h: {{ .FiveHourGauge }}{{ end }} "
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+# OS Junk
+.DS_Store
+Thumbs.db
+
+# Editor & Temp
+*~
+*.swp
+*.bak
+.dotfiles_backup_*
