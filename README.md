@@ -8,14 +8,16 @@ A modular, cross-platform dotfile repository using **GNU Stow** for configuratio
 
 ```text
 ~/projects/dotfiles/
-├── install.sh                  # Bootstrap script for macOS & Linux/WSL
+├── install.sh                  # Consent-first bootstrap for macOS & Linux/WSL
+├── deps.list                   # Single list of every dependency (read by install.sh)
+├── AGENTS.md                   # Rules for AI agents (CLAUDE.md / GEMINI.md point here)
 ├── README.md                   # Documentation
 ├── agent-skills/               # Canonical source for AI Agent Skills
 │   └── runbook/
 │       └── SKILL.md
 └── common/                     # Stowed package linked directly to $HOME
     ├── .config/
-    │   └── oh-my-posh/         # OMP themes (system-omp, claude-omp, agy-omp)
+    │   └── oh-my-posh/         # OMP themes (system/claude/agy) + claude-statusline.sh
     ├── .zshrc                  # Modular Zsh entrypoint
     └── .zsh/
         ├── 00-env.zsh          # PATH, pnpm, mise, zoxide
@@ -42,12 +44,31 @@ cd dotfiles
 ./install.sh
 ```
 
-The installer will:
+Prerequisites: `bash`, `sudo` (Linux/WSL), and [Homebrew](https://brew.sh) on macOS.
 
-1. Automatically install `stow` (via `brew` or `apt`).
-2. Back up any conflicting existing configuration files.
-3. Link `common` package into `$HOME` via GNU Stow.
-4. Fan out symlinks for `agent-skills/` to both `~/.claude/skills` and `~/.gemini/config/skills`.
+The installer asks before every change and is safe to re-run:
+
+1. **Dependency check (read-only).** Reads `deps.list`, checks each entry for this platform, and prints what is missing, who needs it, and the exact install command.
+2. **Consent:** `[a]ll missing / [r]equired only / [N]o`. `N` with required dependencies missing exits with nothing changed.
+3. **Install** via `apt`/`brew`, scripted installers, or the Nerd Font installer (on WSL the font goes onto the Windows host). Everything is re-checked; if a required dependency is still missing it stops before touching `$HOME`.
+4. **Link check (read-only).** Shows each item as ✔ linked, `+` new link, or `!` existing and not ours. Cross-checked with `stow -n` (a dry run).
+5. **Consent**, then any `!` items are **moved** to `~/.dotfiles_backup_<timestamp>/` (never deleted), `stow --restow common` links the package, and `agent-skills/` is linked to `~/.claude/skills` and `~/.gemini/config/skills`.
+6. **Agent status lines.** With consent, sets only the `statusLine` key in `~/.claude/settings.json` and `~/.gemini/antigravity-cli/settings.json` (backed up first).
+
+```bash
+./install.sh --check   # read-only report; exit 1 if something required is missing
+./install.sh --yes     # non-interactive: install all missing deps and accept every prompt
+```
+
+### What GNU Stow does with existing files
+
+Stow never overwrites silently: a real file or a foreign symlink where it wants a link makes it abort everything. A real *directory* is different: stow quietly links our files *inside* it, mixing them with yours. That is why `install.sh` backs up the whole existing entry first. `~/.config` and `~/.local` are treated as shared containers: only the entries inside them are linked.
+
+---
+
+## 📦 Dependencies (`deps.list`)
+
+One row per dependency: `id | tier | check | brew | apt | fallback | required_by`. The header of `deps.list` documents every field. **Whenever you add a config or script that needs a new tool, add its row in the same commit** (see `AGENTS.md`), then confirm with `./install.sh --check`.
 
 ---
 
@@ -73,10 +94,12 @@ All skills reside in `agent-skills/<skill-name>/SKILL.md`.
    mv ~/.config/git/config ~/projects/dotfiles/common/.config/git/
    ```
 
-2. Re-stow:
+2. Add any tools the config needs to `deps.list`.
+
+3. Re-run the installer (it backs up the old path and links the new one):
 
    ```bash
-   stow --dir=~/projects/dotfiles --target=$HOME --restow common
+   ./install.sh
    ```
 
 ### Machine-Specific Untracked Secrets
