@@ -8,6 +8,7 @@ authoring a runbook never means editing markup.
 
     python3 scripts/build_runbook.py --data my-rb-data.json --out My-Runbook.html
     python3 scripts/build_runbook.py --data my-rb-data.json --state progress.json --out My-Runbook.html
+    python3 scripts/build_runbook.py --data my-rb-data.json --out My-Runbook.html --pdf My-Runbook.pdf --booklet
     python3 scripts/build_runbook.py --data my-rb-data.json --validate-only
 
 Validation runs on every build. Structural problems (a missing step id, a
@@ -216,11 +217,69 @@ def build(data: dict, state: dict, template: Path) -> str:
     return html
 
 
+def export_pdf(html_path: Path, pdf_path: Path, booklet: bool = False) -> int:
+    """Render the built HTML file to PDF via headless Chromium."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print(
+            "error: PDF export requires playwright (pip install playwright && python3 -m playwright install chromium)",
+            file=sys.stderr,
+        )
+        return 1
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.goto(html_path.resolve().as_uri(), wait_until="networkidle")
+        page.emulate_media(media="print")
+        page.wait_for_timeout(500)
+
+        pdf_path.parent.mkdir(parents=True, exist_ok=True)
+        page.pdf(
+            path=str(pdf_path),
+            format="A4",
+            print_background=True,
+            prefer_css_page_size=True,
+        )
+        browser.close()
+
+    page_count = None
+    try:
+        import pymupdf as fitz
+        doc = fitz.open(str(pdf_path))
+        page_count = len(doc)
+        doc.close()
+    except Exception:
+        try:
+            import fitz
+            doc = fitz.open(str(pdf_path))
+            page_count = len(doc)
+            doc.close()
+        except Exception:
+            pass
+
+    msg = f"wrote {pdf_path}"
+    if page_count is not None:
+        msg += f" ({page_count} pages"
+        if booklet:
+            if page_count % 4 == 0:
+                msg += ", perfect multiple of 4 for booklet printing"
+            else:
+                rem = 4 - (page_count % 4)
+                msg += f", warning: not a multiple of 4 — booklet mode will add {rem} blank page(s)"
+        msg += ")"
+    print(msg)
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--data", required=True, help="rb-data JSON file (the runbook content)")
     ap.add_argument("--state", default=None, help="rb-state JSON file (ticks); defaults to empty")
     ap.add_argument("--out", default=None, help="output HTML path")
+    ap.add_argument("--pdf", default=None, help="output PDF path (rendered via headless Chromium)")
+    ap.add_argument("--booklet", action="store_true", help="enable booklet mode (A4 print layout, multiple-of-4 page check)")
     ap.add_argument("--template", default=str(DEFAULT_TEMPLATE), help="scaffold to inject into")
     ap.add_argument("--validate-only", action="store_true", help="check the data and stop")
     ap.add_argument("--strict", action="store_true", help="treat warnings as errors")
@@ -249,16 +308,35 @@ def main() -> int:
         print(f"ok: {len(data.get('phases') or [])} phases, {n_steps} steps, {len(warnings)} warning(s)")
         return 0
 
-    if not args.out:
-        print("error: --out is required unless --validate-only", file=sys.stderr)
+    if not args.out and not args.pdf:
+        print("error: --out or --pdf is required unless --validate-only", file=sys.stderr)
         return 1
 
     html = build(data, state, Path(args.template))
-    Path(args.out).write_text(html, encoding="utf-8")
-    print(
-        f"wrote {args.out} — {len(data.get('phases') or [])} phases, {n_steps} steps, "
-        f"{len(state['done'])} ticked, {len(warnings)} warning(s)"
-    )
+
+    temp_html: Path | None = None
+    if args.out:
+        out_html_path = Path(args.out)
+        out_html_path.write_text(html, encoding="utf-8")
+        print(
+            f"wrote {args.out} — {len(data.get('phases') or [])} phases, {n_steps} steps, "
+            f"{len(state['done'])} ticked, {len(warnings)} warning(s)"
+        )
+    else:
+        import tempfile
+        t = tempfile.NamedTemporaryFile("w", suffix=".html", delete=False, encoding="utf-8")
+        t.write(html)
+        t.close()
+        temp_html = Path(t.name)
+        out_html_path = temp_html
+
+    if args.pdf:
+        pdf_res = export_pdf(out_html_path, Path(args.pdf), booklet=args.booklet)
+        if temp_html:
+            temp_html.unlink(missing_ok=True)
+        if pdf_res != 0:
+            return pdf_res
+
     return 0
 
 

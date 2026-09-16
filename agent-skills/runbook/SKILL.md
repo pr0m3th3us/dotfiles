@@ -103,6 +103,9 @@ python3 scripts/build_runbook.py --data my-rb-data.json --validate-only
 python3 scripts/build_runbook.py --data my-rb-data.json \
                                  --state my-progress.json \
                                  --out My-Runbook.html
+python3 scripts/build_runbook.py --data my-rb-data.json \
+                                 --out My-Runbook.html \
+                                 --pdf My-Runbook.pdf --booklet
 python3 scripts/verify_runbook.py My-Runbook.html
 ```
 
@@ -112,6 +115,11 @@ missing `kind` or `do`, a duplicate step id, a `dependsOn` pointing nowhere, a
 table row that does not match its header — and warns about things worth a second
 look, like a phase with no verification gate or ticks referencing steps that no
 longer exist.
+
+When `--pdf` and `--booklet` are passed, `build_runbook.py` uses headless Chromium
+to render the page using A4 print geometry, formats high-density print spreads,
+preserves physical pen-tickable checkboxes (`[ ]`), and verifies that the document
+page count is a multiple of 4 for Adobe/printer booklet mode.
 
 Two rules keep the separation honest:
 
@@ -145,8 +153,9 @@ is there tells you which fields are worth filling in:
 - **Progress**: overall count and percentage, time remaining, and a per-phase bar.
 - **Filters**: search, phase, priority, environment, hide-completed, and "only
   steps I must act on".
-- **Copy buttons**, a theme toggle, and a print stylesheet that expands every
-  detail region.
+- **Copy buttons**, a theme toggle, and a print stylesheet that formats compact
+  A4 print spreads, keeps pen-tickable square checkboxes visible, prevents orphan
+  headers, and expands detail regions.
 - **Persistence**, in two layers, because a file on disk cannot rewrite itself:
   every tick writes `{done, updatedAt}` to `localStorage` under
   `runbook:<data.id>`, and on load whichever of that and the embedded `rb-state`
@@ -278,7 +287,7 @@ step instead of loading the whole plan.
 - `assets/rb-state.sample.json` — the state shape: `{"done":{...},"updatedAt":n}`.
 - `assets/runbook-template.html` — the presentation scaffold. Reusable, content
   free, and not to be forked per runbook.
-- `scripts/build_runbook.py` — validates data and injects data + state into the
-  scaffold. The only supported way to produce a runbook HTML file.
+- `scripts/build_runbook.py` — validates data, injects data + state into the
+  scaffold, and optionally exports print/booklet PDFs (`--pdf`, `--booklet`).
 - `scripts/verify_runbook.py` — opens a built runbook in headless Chromium and
   checks it actually works. Run before handing anything over.

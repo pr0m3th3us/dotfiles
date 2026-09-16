@@ -198,12 +198,68 @@ tr:last-child td{border-bottom:0}
 .empty{padding:30px;text-align:center;color:var(--muted);font-size:14px}
 .fatal{max-width:760px;margin:60px auto;padding:20px 22px;border:1px solid var(--stop-line);background:var(--stop-soft);color:var(--stop);border-radius:8px;font-size:14px}
 .fatal pre{white-space:pre-wrap;font-size:12px;margin:8px 0 0}
+@page{size:A4 portrait;margin:12mm 14mm 14mm 14mm}
 @media print{
-  .toolbar,.savebar,.cb,.toggle,.cmd .cap button{display:none}
-  .detail{display:block!important;padding-left:16px}
-  .step{break-inside:avoid;box-shadow:none}
-  .phase{break-inside:auto}
-  body{background:#fff;font-size:11pt}
+  .toolbar,.savebar,.toggle,.cmd .cap button,.foot button{display:none!important}
+  :root,:root[data-theme="dark"],:root[data-theme="light"]{
+    --bg:#fff!important;--surface:#fff!important;--surface-2:#f8f9fa!important;
+    --border:#d0d7de!important;--border-strong:#8c959f!important;
+    --ink:#111!important;--ink-2:#333!important;--muted:#555!important;
+    --code-bg:#f6f8fa!important;--code-ink:#1f2328!important;--code-border:#d0d7de!important;
+    --shadow:none!important;
+  }
+  body{background:#fff!important;color:#111!important;font-size:10pt;line-height:1.35;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .wrap{max-width:100%!important;padding:0!important;margin:0!important}
+  .mast{padding:0 0 10px 0;border-bottom:2px solid #111;margin-bottom:12px}
+  .eyebrow{font-size:8pt;margin-bottom:4px}
+  h1{font-size:18pt;margin:0 0 4px}
+  .summary{font-size:9.5pt;margin:4px 0 0}
+  .chips{margin:8px 0 0;gap:4px}
+  .chip{font-size:8pt;padding:2px 6px;border:1px solid #bbb}
+  .prog-card,.cb-card,.lead{break-inside:avoid;page-break-inside:avoid;padding:8px 12px;margin:10px 0;border:1px solid #ccc;background:#fafafa!important;box-shadow:none}
+  .prog-big{font-size:14pt}
+  .prog-sub{font-size:8.5pt}
+  .bar{height:6px;margin-top:6px}
+  .phase{margin:16px 0 0;break-inside:auto}
+  .phead,.shead{break-after:avoid;page-break-after:avoid;border-bottom:2px solid #111;padding-bottom:4px;margin:14px 0 8px}
+  .pnum{font-size:9pt}
+  .phead h2{font-size:13pt}
+  .pmeta{font-size:8.5pt}
+  .intent{font-size:9.5pt;margin:4px 0 8px}
+  .pbar{display:none}
+  .step{break-inside:avoid;page-break-inside:avoid;box-shadow:none!important;border:1px solid #ccc;border-radius:4px;margin:0 0 7px;background:#fff!important}
+  .step.done{opacity:1!important}
+  .step.hidden{display:block!important}
+  .srow{padding:7px 10px;gap:8px;align-items:flex-start}
+  .cb{display:block!important;flex:none;margin-top:2px}
+  .cb input{appearance:none;-webkit-appearance:none;width:13px;height:13px;border:1.5px solid #222!important;border-radius:2px;display:block;background:#fff!important;margin:0}
+  .cb input:checked{background:#222!important}
+  .stepid{font-size:8.5pt;margin:0 0 2px}
+  .title{font-size:11pt;margin:0 0 4px;font-weight:600;cursor:default}
+  .badges{gap:4px;margin:0 0 4px}
+  .b{font-size:7.5pt;padding:1.5px 5px;border-radius:3px}
+  .do{padding:5px 8px;margin:0 0 6px;border:1px solid #d0d7de;border-radius:4px;background:#f8f9fa!important}
+  .do .lbl{font-size:7.5pt;margin-bottom:2px}
+  .do p{font-size:9.5pt;line-height:1.35}
+  .detail{display:block!important;border-top:1px dotted #ccc;padding:6px 10px 8px;background:#fff!important;font-size:9.5pt}
+  .why{font-size:9.5pt;margin:0 0 6px}
+  ul.notes{font-size:9pt;margin:0 0 6px;padding-left:16px}
+  ul.notes li{margin-bottom:3px}
+  .cmd{margin:0 0 6px;border:1px solid #ddd}
+  .cmd .cap{font-size:8pt;padding:4px 8px;background:#f0f0f0}
+  .cmd pre{font-size:8.5pt;padding:6px 8px;line-height:1.35;white-space:pre-wrap;word-break:break-all}
+  .tw{margin:0 0 6px}
+  table{font-size:8.5pt}
+  th,td{padding:4px 7px}
+  .call{break-inside:avoid;page-break-inside:avoid;padding:6px 9px;margin:0 0 6px;font-size:9pt}
+  .gate{break-inside:avoid;page-break-inside:avoid;padding:6px 9px;margin:6px 0;border:1px solid #2da44e;background:#f6fcf8!important}
+  .gate .k{font-size:7.5pt;margin-bottom:2px}
+  .gate p{font-size:9pt;margin:0 0 4px}
+  .gate pre{font-size:8.5pt;padding:5px 8px;margin:0 0 4px}
+  .booklet-page{break-after:page;page-break-after:always}
+  .page-break-before{break-before:page;page-break-before:always}
+  .page-break-after{break-after:page;page-break-after:always}
+  .no-break{break-inside:avoid;page-break-inside:avoid}
 }
 @media (max-width:640px){
   .wrap{padding:0 14px 80px}
