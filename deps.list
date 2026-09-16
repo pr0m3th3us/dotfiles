@@ -1,0 +1,49 @@
+# ==============================================================================
+# deps.list: the single list of everything this repo depends on.
+#
+# Read by install.sh with plain bash (no jq), so keep to this format:
+#   id | tier | check | brew | apt | fallback | required_by
+#
+#   id           Name. Optional platform suffix: @mac, @linux, @wsl, or @unix (linux+wsl).
+#   tier         required | optional
+#   check        cmd:a,b     any of these commands is on PATH
+#                file:p1,p2  any of these paths exists (~ allowed)
+#                py:module   python3 can import the module
+#                font:name   Nerd Font lookup (Windows host fonts on WSL)
+#   brew         brew:formula | cask:cask | -
+#   apt          apt:package | -
+#   fallback     Used when neither brew nor apt applies:
+#                sh:<command> | nerdfont:<font name> | manual:<instructions> | -
+#   required_by  Repo paths that need it. Keep this accurate (see AGENTS.md).
+#
+# Rows install in file order, so list a dependency before anything needing it.
+# The | character separates fields, so sh: commands cannot use pipes.
+# ==============================================================================
+
+# --- Bootstrap ----------------------------------------------------------------
+git          | required | cmd:git        | brew:git   | apt:git   | -  | install.sh
+stow         | required | cmd:stow       | brew:stow  | apt:stow  | -  | install.sh
+curl         | required | cmd:curl       | brew:curl  | apt:curl  | -  | install.sh (sh: installers)
+jq           | required | cmd:jq         | brew:jq    | apt:jq    | -  | common/.config/oh-my-posh/claude-statusline.sh, install.sh (settings wiring)
+
+# --- Shell --------------------------------------------------------------------
+zsh          | required | cmd:zsh        | brew:zsh   | apt:zsh   | -  | common/.zshrc, common/.zsh/
+oh-my-posh   | required | cmd:oh-my-posh | brew:jandedobbeleer/oh-my-posh/oh-my-posh | - | sh:curl -fsSL -o /tmp/omp-install.sh https://ohmyposh.dev/install.sh && bash /tmp/omp-install.sh -d ~/.local/bin | common/.zsh/50-prompt.zsh, common/.config/oh-my-posh/
+nerd-font    | required | font:CaskaydiaCove | - | - | nerdfont:CascadiaCode | common/.config/oh-my-posh/*.json (glyphs)
+
+fzf                     | optional | cmd:fzf          | brew:fzf     | apt:fzf      | - | common/.zsh/20-completion.zsh
+zoxide                  | optional | cmd:zoxide       | brew:zoxide  | apt:zoxide   | - | common/.zsh/00-env.zsh
+mise                    | optional | cmd:mise         | brew:mise    | -            | sh:curl -fsSL -o /tmp/mise-install.sh https://mise.run && sh /tmp/mise-install.sh | common/.zsh/00-env.zsh
+zsh-autosuggestions     | optional | file:/usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh,/opt/homebrew/share/zsh-autosuggestions/zsh-autosuggestions.zsh,/usr/local/share/zsh-autosuggestions/zsh-autosuggestions.zsh | brew:zsh-autosuggestions | apt:zsh-autosuggestions | - | common/.zsh/30-plugins.zsh
+zsh-syntax-highlighting | optional | file:/usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh,/opt/homebrew/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh,/usr/local/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh | brew:zsh-syntax-highlighting | apt:zsh-syntax-highlighting | - | common/.zsh/30-plugins.zsh
+bat                     | optional | cmd:batcat,bat   | brew:bat     | apt:bat      | - | common/.zsh/40-aliases.zsh
+fd                      | optional | cmd:fdfind,fd    | brew:fd      | apt:fd-find  | - | common/.zsh/40-aliases.zsh
+xclip@unix              | optional | cmd:xclip        | -            | apt:xclip    | - | common/.zsh/os/wsl.zsh
+
+# --- Agents -------------------------------------------------------------------
+claude       | optional | cmd:claude      | - | - | sh:curl -fsSL -o /tmp/claude-install.sh https://claude.ai/install.sh && bash /tmp/claude-install.sh | common/.config/oh-my-posh/claude-omp.json, common/.config/oh-my-posh/claude-statusline.sh
+antigravity  | optional | cmd:antigravity | - | - | manual:Install the Antigravity CLI from Google's Antigravity docs, then re-run install.sh | common/.config/oh-my-posh/agy-omp.json, common/.zsh/40-aliases.zsh (agy)
+
+# --- Agent skills -------------------------------------------------------------
+python3      | optional | cmd:python3     | brew:python | apt:python3 | - | agent-skills/runbook/scripts/
+playwright   | optional | py:playwright   | - | - | manual:pip install playwright && python3 -m playwright install chromium (use a venv or pipx on PEP 668 systems) | agent-skills/runbook/scripts/verify_runbook.py, build_runbook.py --pdf
