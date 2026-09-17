@@ -550,16 +550,18 @@ plan_wiring() {
   W_LABEL=() W_FILE=() W_VALUE=() W_STATE=()
   add_wiring "Claude Code" claude "$HOME/.claude/settings.json" \
     "{\"type\":\"command\",\"command\":\"$HOME/.config/oh-my-posh/claude-statusline.sh\"}"
-  add_wiring "Antigravity CLI" antigravity "$HOME/.gemini/antigravity-cli/settings.json" \
+  add_wiring "Antigravity CLI" "agy antigravity" "$HOME/.gemini/antigravity-cli/settings.json" \
     "{\"type\":\"command\",\"command\":\"oh-my-posh antigravity --config $HOME/.config/oh-my-posh/agy-omp.json\",\"enabled\":true}"
 }
 
 add_wiring() {
-  local label="$1" cli="$2" file="$3" value="$4" state
-  if ! command -v "$cli" >/dev/null 2>&1; then
-    state="skip:$cli not installed"
+  # cli: space-separated command names; any one on PATH counts as installed
+  local label="$1" cli="$2" file="$3" value="$4" state c found=""
+  for c in $cli; do command -v "$c" >/dev/null 2>&1 && { found="$c"; break; }; done
+  if [ -z "$found" ]; then
+    state="skip:${cli%% *} not installed"
   elif [ ! -d "$(dirname "$file")" ]; then
-    state="skip:$(dirname "$file") does not exist yet (start $cli once)"
+    state="skip:$(dirname "$file") does not exist yet (start $found once)"
   elif ! command -v jq >/dev/null 2>&1; then
     state="skip:jq not installed"
   elif [ -f "$file" ] && ! jq empty "$file" >/dev/null 2>&1; then

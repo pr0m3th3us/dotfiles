@@ -42,7 +42,7 @@ xclip@unix              | optional | cmd:xclip        | -            | apt:xclip
 
 # --- Agents -------------------------------------------------------------------
 claude       | optional | cmd:claude      | - | - | sh:curl -fsSL -o /tmp/claude-install.sh https://claude.ai/install.sh && bash /tmp/claude-install.sh | common/.config/oh-my-posh/claude-omp.json, common/.config/oh-my-posh/claude-statusline.sh
-antigravity  | optional | cmd:antigravity | - | - | manual:Install the Antigravity CLI from Google's Antigravity docs, then re-run install.sh | common/.config/oh-my-posh/agy-omp.json, common/.zsh/40-aliases.zsh (agy)
+antigravity  | optional | cmd:agy,antigravity | cask:antigravity-cli | - | manual:Install the Antigravity CLI from Google's Antigravity docs, then re-run install.sh | common/.config/oh-my-posh/agy-omp.json, common/.zsh/40-aliases.zsh (agy)
 
 # --- Agent skills -------------------------------------------------------------
 python3      | optional | cmd:python3     | brew:python | apt:python3 | - | agent-skills/runbook/scripts/
