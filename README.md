@@ -61,6 +61,15 @@ The installer asks before every change and is safe to re-run:
 ./install.sh --yes     # non-interactive: install all missing deps and accept every prompt
 ```
 
+### Terminal font
+
+The prompt and agent status lines need a Nerd Font. Either of these works; the installer installs CaskaydiaCove if neither is present:
+
+* **CaskaydiaCove Nerd Font Mono** (`oh-my-posh font install CascadiaCode`)
+* **GoogleSansCode Nerd Font Mono** (`oh-my-posh font install GoogleSansCode`)
+
+Always pick the **Mono** variant (shown as `… NFM` in font pickers). The plain `NF` variant draws icons wider than one cell and `NFP` (Propo) is proportional; both make powerline caps and icons misalign, most visibly in macOS Terminal.app. Mono keeps icons small but aligned.
+
 ### What GNU Stow does with existing files
 
 Stow never overwrites silently: a real file or a foreign symlink where it wants a link makes it abort everything. A real *directory* is different: stow quietly links our files *inside* it, mixing them with yours. That is why `install.sh` backs up the whole existing entry first. `~/.config` and `~/.local` are treated as shared containers: only the entries inside them are linked.

@@ -163,8 +163,19 @@ windows_font_dirs() {
   fi
 }
 
+# font_present "Name1,Name2": true if any of them is installed as a Nerd Font
+# Mono variant (e.g. CaskaydiaCoveNerdFontMono-Regular.ttf, "... Nerd Font Mono").
 font_present() {
-  local pattern="$1.*nerd" dir
+  local names="$1" name
+  local IFS=','
+  for name in $names; do
+    font_variant_present "$(trim "$name")" && return 0
+  done
+  return 1
+}
+
+font_variant_present() {
+  local pattern="$1.*nerd.*mono" dir
   case "$OS" in
     mac)
       for dir in "$HOME/Library/Fonts" "/Library/Fonts"; do
@@ -714,9 +725,11 @@ section "Done"
 [ -d "$BACKUP_DIR" ] && info "Backups: $BACKUP_DIR (move items back to restore; remove the symlink first)"
 info "Manual follow-ups, if not done already:"
 case "$OS" in
-  wsl) info "  - Windows Terminal: Settings > Defaults > Appearance > Font face = CaskaydiaCove Nerd Font" ;;
-  mac) info "  - Terminal/iTerm2: set the font to CaskaydiaCove Nerd Font" ;;
-  linux) info "  - Terminal emulator: set the font to CaskaydiaCove Nerd Font" ;;
+  wsl) info "  - Windows Terminal: Settings > Defaults > Appearance > Font face = a Nerd Font Mono (below)" ;;
+  mac) info "  - Terminal/iTerm2: set the font to a Nerd Font Mono (below)" ;;
+  linux) info "  - Terminal emulator: set the font to a Nerd Font Mono (below)" ;;
 esac
+info "      CaskaydiaCove Nerd Font Mono or GoogleSansCode Nerd Font Mono (listed as ... NFM)."
+info "      Use the Mono variant only: NF and NFP (Propo) icons overflow their cells and misalign."
 [ "$(basename "${SHELL:-}")" = "zsh" ] || info "  - Make zsh your login shell: chsh -s \"\$(command -v zsh)\""
 info "  - Open a new terminal to load the new shell config."

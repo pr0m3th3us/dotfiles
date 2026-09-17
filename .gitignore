@@ -11,3 +11,6 @@ Thumbs.db
 # Python
 __pycache__/
 *.pyc
+
+# Editor (per-user settings, e.g. Peacock colors)
+.vscode/

@@ -9,7 +9,8 @@
 #   check        cmd:a,b     any of these commands is on PATH
 #                file:p1,p2  any of these paths exists (~ allowed)
 #                py:module   python3 can import the module
-#                font:name   Nerd Font lookup (Windows host fonts on WSL)
+#                font:a,b    any of these Nerd Fonts is installed in its Mono variant
+#                            (Windows host fonts on WSL)
 #   brew         brew:formula | cask:cask | -
 #   apt          apt:package | -
 #   fallback     Used when neither brew nor apt applies:
@@ -29,7 +30,8 @@ jq           | required | cmd:jq         | brew:jq    | apt:jq    | -  | common/
 # --- Shell --------------------------------------------------------------------
 zsh          | required | cmd:zsh        | brew:zsh   | apt:zsh   | -  | common/.zshrc, common/.zsh/
 oh-my-posh   | required | cmd:oh-my-posh | brew:jandedobbeleer/oh-my-posh/oh-my-posh | - | sh:curl -fsSL -o /tmp/omp-install.sh https://ohmyposh.dev/install.sh && bash /tmp/omp-install.sh -d ~/.local/bin | common/.zsh/50-prompt.zsh, common/.config/oh-my-posh/
-nerd-font    | required | font:CaskaydiaCove | - | - | nerdfont:CascadiaCode | common/.config/oh-my-posh/*.json (glyphs)
+# Either font works; terminals must use the Mono (NFM) variant, see README.
+nerd-font    | required | font:CaskaydiaCove,GoogleSansCode | - | - | nerdfont:CascadiaCode | common/.config/oh-my-posh/*.json (glyphs)
 
 fzf                     | optional | cmd:fzf          | brew:fzf     | apt:fzf      | - | common/.zsh/20-completion.zsh
 zoxide                  | optional | cmd:zoxide       | brew:zoxide  | apt:zoxide   | - | common/.zsh/00-env.zsh
