@@ -22,7 +22,7 @@
 
 # --- Bootstrap ----------------------------------------------------------------
 git          | required | cmd:git        | brew:git   | apt:git   | -  | install.sh
-stow         | required | cmd:stow       | brew:stow  | apt:stow  | -  | install.sh
+stow         | required | cmd:stow       | brew:stow  | apt:stow  | -  | install.sh, common/.zsh/45-functions.zsh (restow)
 curl         | required | cmd:curl       | brew:curl  | apt:curl  | -  | install.sh (sh: installers)
 jq           | required | cmd:jq         | brew:jq    | apt:jq    | -  | common/.config/oh-my-posh/claude-statusline.sh, install.sh (settings wiring)
 
@@ -33,7 +33,7 @@ nerd-font    | required | font:CaskaydiaCove | - | - | nerdfont:CascadiaCode | c
 
 fzf                     | optional | cmd:fzf          | brew:fzf     | apt:fzf      | - | common/.zsh/20-completion.zsh
 zoxide                  | optional | cmd:zoxide       | brew:zoxide  | apt:zoxide   | - | common/.zsh/00-env.zsh
-mise                    | optional | cmd:mise         | brew:mise    | -            | sh:curl -fsSL -o /tmp/mise-install.sh https://mise.run && sh /tmp/mise-install.sh | common/.zsh/00-env.zsh
+mise                    | optional | cmd:mise         | brew:mise    | -            | sh:curl -fsSL -o /tmp/mise-install.sh https://mise.run && sh /tmp/mise-install.sh | common/.zsh/00-env.zsh (runtime manager: python, java, etc.)
 zsh-autosuggestions     | optional | file:/usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh,/opt/homebrew/share/zsh-autosuggestions/zsh-autosuggestions.zsh,/usr/local/share/zsh-autosuggestions/zsh-autosuggestions.zsh | brew:zsh-autosuggestions | apt:zsh-autosuggestions | - | common/.zsh/30-plugins.zsh
 zsh-syntax-highlighting | optional | file:/usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh,/opt/homebrew/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh,/usr/local/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh | brew:zsh-syntax-highlighting | apt:zsh-syntax-highlighting | - | common/.zsh/30-plugins.zsh
 bat                     | optional | cmd:batcat,bat   | brew:bat     | apt:bat      | - | common/.zsh/40-aliases.zsh

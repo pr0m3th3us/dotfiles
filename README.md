@@ -20,11 +20,12 @@ A modular, cross-platform dotfile repository using **GNU Stow** for configuratio
     │   └── oh-my-posh/         # OMP themes (system/claude/agy) + claude-statusline.sh
     ├── .zshrc                  # Modular Zsh entrypoint
     └── .zsh/
-        ├── 00-env.zsh          # PATH, pnpm, mise, zoxide
+        ├── 00-env.zsh          # Homebrew, PATH, pnpm, mise, zoxide
         ├── 10-history.zsh      # History options & keybindings
         ├── 20-completion.zsh   # Compinit, zstyle rules, fzf
         ├── 30-plugins.zsh      # Autosuggestions & syntax highlighting
         ├── 40-aliases.zsh      # Common aliases & binary normalization
+        ├── 45-functions.zsh    # Shell functions (restow)
         ├── 50-prompt.zsh       # Oh My Posh initialization
         └── os/
             ├── mac.zsh         # macOS-specific environment & aliases
@@ -51,7 +52,7 @@ The installer asks before every change and is safe to re-run:
 1. **Dependency check (read-only).** Reads `deps.list`, checks each entry for this platform, and prints what is missing, who needs it, and the exact install command.
 2. **Consent:** `[a]ll missing / [r]equired only / [N]o`. `N` with required dependencies missing exits with nothing changed.
 3. **Install** via `apt`/`brew`, scripted installers, or the Nerd Font installer (on WSL the font goes onto the Windows host). Everything is re-checked; if a required dependency is still missing it stops before touching `$HOME`.
-4. **Link check (read-only).** Shows each item as ✔ linked, `+` new link, or `!` existing and not ours. Cross-checked with `stow -n` (a dry run).
+4. **Link check (read-only).** Shows each item as ✔ linked, `+` new link, or `!` existing and not ours. Cross-checked with `stow -n` (a dry run). If an existing shell rc (e.g. `~/.zshrc`) is marked `!`, its active settings are printed: nothing in it is carried over, so move what you need into the repo (every machine) or `~/.zshrc.local` (this machine only) first.
 5. **Consent**, then any `!` items are **moved** to `~/.dotfiles_backup_<timestamp>/` (never deleted), `stow --restow common` links the package, and `agent-skills/` is linked to `~/.claude/skills` and `~/.gemini/config/skills`.
 6. **Agent status lines.** With consent, sets only the `statusLine` key in `~/.claude/settings.json` and `~/.gemini/antigravity-cli/settings.json` (backed up first).
 
@@ -101,6 +102,16 @@ All skills reside in `agent-skills/<skill-name>/SKILL.md`.
    ```bash
    ./install.sh
    ```
+
+   If nothing needs backing up, `restow` is the quick equivalent for the linking step (`stow -d ~/projects/dotfiles -t ~ --restow common`; `restow -d <dir>` for another clone). Editing an already-linked file needs neither.
+
+### Runtimes (Python, Java, …)
+
+Use `mise` (activated in `00-env.zsh`) rather than per-language managers like pyenv or SDKMAN, e.g. `mise use -g python@3.12 java@temurin-21`.
+
+### Multiple users on one machine
+
+Each user keeps their own clone at `~/projects/dotfiles` and runs `./install.sh` once; sync with `git pull` like any other environment. On macOS, Homebrew must have a single owner: other users run it as that owner rather than with their own account.
 
 ### Machine-Specific Untracked Secrets
 

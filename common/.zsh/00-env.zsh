@@ -1,5 +1,15 @@
 # --- Environment & Paths --------------------------------------
 
+# Homebrew (macOS arm64 / macOS Intel / Linuxbrew). Must run before any module
+# that checks `command -v` for brew-installed tools or runs compinit.
+for _brew in /opt/homebrew/bin/brew /usr/local/bin/brew /home/linuxbrew/.linuxbrew/bin/brew; do
+  if [ -x "$_brew" ]; then
+    eval "$("$_brew" shellenv)"
+    break
+  fi
+done
+unset _brew
+
 # Local binary directory
 case ":$PATH:" in
   *":$HOME/.local/bin:"*) ;;

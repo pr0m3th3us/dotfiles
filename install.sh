@@ -460,6 +460,20 @@ stow_dry_run_conflicts() {
       -e 's/.*existing target is [^:]*: \(.*\)$/\1/p'
 }
 
+# A shell rc about to be backed up may hold settings the repo doesn't have
+# (version managers, PATH tweaks, aliases). Show them so the user can decide
+# what to keep before consenting: move keepers into the repo (every machine)
+# or ~/.zshrc.local (this machine only), or answer N and do that first.
+show_rc_settings() {
+  local file="$1" lines
+  case "$(basename "$file")" in .zshrc | .zprofile | .zshenv | .bashrc | .bash_profile) ;; *) return 0 ;; esac
+  [ -f "$file" ] && [ ! -L "$file" ] || return 0
+  lines="$(grep -vE '^[[:space:]]*(#|$)' "$file" 2>/dev/null)"
+  [ -n "$lines" ] || return 0
+  printf '      %ssettings in this file (not carried over; keep what you need in the repo or ~/.zshrc.local):%s\n' "$C_DIM" "$C_RESET"
+  printf '%s\n' "$lines" | sed 's/^/        /'
+}
+
 link_preflight() {
   section "Links into \$HOME"
   L_REL=() L_SRC=() L_STATE=() L_KIND=() CREATE_DIRS=""
@@ -475,7 +489,10 @@ link_preflight() {
     case "${L_STATE[$i]}" in
       linked) printf '  %s✔%s ~/%s\n' "$C_GREEN" "$C_RESET" "${L_REL[$i]}" ;;
       new) printf '  %s+%s ~/%s %s-> %s%s\n' "$C_BLUE" "$C_RESET" "${L_REL[$i]}" "$C_DIM" "${L_SRC[$i]#"$DOTFILES_DIR"/}" "$C_RESET" ;;
-      conflict) printf '  %s!%s ~/%s %s(exists and is not ours: will be backed up)%s\n' "$C_YELLOW" "$C_RESET" "${L_REL[$i]}" "$C_DIM" "$C_RESET" ;;
+      conflict)
+        printf '  %s!%s ~/%s %s(exists and is not ours: will be backed up)%s\n' "$C_YELLOW" "$C_RESET" "${L_REL[$i]}" "$C_DIM" "$C_RESET"
+        show_rc_settings "$HOME/${L_REL[$i]}"
+        ;;
     esac
   done
 
