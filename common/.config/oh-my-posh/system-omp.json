@@ -26,12 +26,20 @@
           "template": "╭─"
         },
         {
-          "type": "session",
+          "type": "os",
           "style": "powerline",
           "powerline_symbol": "\ue0b0",
           "foreground": "p:darktext",
           "background": "p:teal",
-          "template": " \uf17c WSL "
+          "options": {
+            "display_distro_name": false,
+            "macos": "\uf179 Mac",
+            "linux": "\uf17c Linux",
+            "wsl": "\uf17c WSL",
+            "wsl_separator": "",
+            "windows": "\uf17a Windows"
+          },
+          "template": " {{ .Icon }} "
         },
         {
           "type": "path",
