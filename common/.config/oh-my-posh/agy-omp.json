@@ -12,7 +12,8 @@
     "alert_red": "#EF4444",
     "darktext": "#111827",
     "whitetext": "#FFFFFF",
-    "git_green": "#16A34A"
+    "git_green": "#16A34A",
+    "teal": "#00d2b4"
   },
   "blocks": [
     {
@@ -20,9 +21,25 @@
       "alignment": "left",
       "segments": [
         {
-          "type": "antigravity",
+          "type": "os",
           "style": "diamond",
           "leading_diamond": "",
+          "trailing_diamond": "",
+          "foreground": "p:darktext",
+          "background": "p:teal",
+          "options": {
+            "display_distro_name": false,
+            "macos": "",
+            "linux": "",
+            "wsl": "",
+            "wsl_separator": "",
+            "windows": ""
+          },
+          "template": " {{ .Icon }} "
+        },
+        {
+          "type": "antigravity",
+          "style": "diamond",
           "trailing_diamond": "",
           "foreground": "p:darktext",
           "background": "p:gemini_blue",
