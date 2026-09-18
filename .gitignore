@@ -14,3 +14,7 @@ __pycache__/
 
 # Editor (per-user settings, e.g. Peacock colors)
 .vscode/
+
+# Claude Code runtime cache: since agent-skills/ is stowed as a whole-directory
+# symlink to ~/.claude/skills, the client writes its local skills sync cache here.
+agent-skills/synced/
