@@ -23,7 +23,7 @@
           "type": "text",
           "style": "plain",
           "foreground": "p:green",
-          "template": "╭─"
+          "template": "\u256d\u2500"
         },
         {
           "type": "os",
@@ -33,11 +33,12 @@
           "background": "p:teal",
           "options": {
             "display_distro_name": false,
-            "macos": "\uf179 Mac",
-            "linux": "\uf17c Linux",
-            "wsl": "\uf17c WSL",
+            "macos": "\uf179",
+            "linux": "\uf17c",
+            "ubuntu": "\uf17c",
+            "wsl": "\uf17c",
             "wsl_separator": "",
-            "windows": "\uf17a Windows"
+            "windows": "\uf17a"
           },
           "template": " {{ .Icon }} "
         },
@@ -63,7 +64,7 @@
             "{{ if or (.Working.Changed) (.Staging.Changed) }}#eab308{{ end }}",
             "{{ if and (gt .Ahead 0) (gt .Behind 0) }}#ef4444{{ end }}"
           ],
-          "template": " \uf418 {{ .HEAD }}{{ if .BranchStatus }} {{ .BranchStatus }}{{ else }} ={{ end }}{{ if .Working.Changed }}  {{ .Working.String }}{{ end }}{{ if .Staging.Changed }}  {{ .Staging.String }}{{ end }} "
+          "template": " \uf418 {{ .HEAD }}{{ if .BranchStatus }} {{ .BranchStatus }}{{ else }} ={{ end }}{{ if .Working.Changed }} \uf046 {{ .Working.String }}{{ end }}{{ if .Staging.Changed }} \uf046 {{ .Staging.String }}{{ end }} "
         },
         {
           "type": "executiontime",
@@ -74,7 +75,7 @@
           "options": {
             "threshold": 0
           },
-          "template": " ⏱ {{ .FormattedMs }} "
+          "template": " \u23f1 {{ .FormattedMs }} "
         }
       ]
     },
@@ -101,7 +102,7 @@
           "options": {
             "precision": 2
           },
-          "template": " 󰍛 {{ round .PhysicalPercentUsed .Precision }}% "
+          "template": " \udb80\udf5b {{ round .PhysicalPercentUsed .Precision }}% "
         },
         {
           "type": "text",
@@ -114,7 +115,7 @@
             "{{ if or .Env.CLAUDE_CODE_ENTRYPOINT .Env.CLAUDE_PROJECT_ROOT .Env.CLAUDE_AGENT_ID .Env.CLAUDE_IS_ACTIVE }}p:coral{{ end }}",
             "{{ if or .Env.ANTIGRAVITY_TRAJECTORY_ID .Env.ANTIGRAVITY_AGENT .Env.ANTIGRAVITY_CONVERSATION_ID .Env.AGY_AGENT .Env.AGY }}p:indigo{{ end }}"
           ],
-          "template": "{{ if or .Env.CLAUDE_CODE_ENTRYPOINT .Env.CLAUDE_PROJECT_ROOT .Env.CLAUDE_AGENT_ID .Env.CLAUDE_IS_ACTIVE }} 󰚩 Claude Code {{ else if or .Env.ANTIGRAVITY_TRAJECTORY_ID .Env.ANTIGRAVITY_AGENT .Env.ANTIGRAVITY_CONVERSATION_ID .Env.AGY_AGENT .Env.AGY }} ✦ agy {{ end }}"
+          "template": "{{ if or .Env.CLAUDE_CODE_ENTRYPOINT .Env.CLAUDE_PROJECT_ROOT .Env.CLAUDE_AGENT_ID .Env.CLAUDE_IS_ACTIVE }} \udb81\udea9 Claude Code {{ else if or .Env.ANTIGRAVITY_TRAJECTORY_ID .Env.ANTIGRAVITY_AGENT .Env.ANTIGRAVITY_CONVERSATION_ID .Env.AGY_AGENT .Env.AGY }} \u2726 agy {{ end }}"
         },
         {
           "type": "time",
@@ -123,7 +124,7 @@
           "invert_powerline": true,
           "foreground": "p:whitetext",
           "background": "p:darkblue",
-          "template": "  {{ .CurrentDate | date \"15:04\" }} "
+          "template": " \uf017 {{ .CurrentDate | date \"15:04\" }} "
         }
       ]
     },
@@ -136,7 +137,7 @@
           "type": "text",
           "style": "plain",
           "foreground": "p:green",
-          "template": "╰─>> "
+          "template": "\u2570\u2500>> "
         }
       ]
     }

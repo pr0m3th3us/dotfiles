@@ -23,51 +23,52 @@
         {
           "type": "os",
           "style": "diamond",
-          "leading_diamond": "",
-          "trailing_diamond": "",
+          "leading_diamond": "\ue0b6",
+          "trailing_diamond": "\ue0b0",
           "foreground": "p:darktext",
           "background": "p:teal",
           "options": {
             "display_distro_name": false,
-            "macos": "",
-            "linux": "",
-            "wsl": "",
+            "macos": "\uf179",
+            "linux": "\uf17c",
+            "ubuntu": "\uf17c",
+            "wsl": "\uf17c",
             "wsl_separator": "",
-            "windows": ""
+            "windows": "\uf17a"
           },
           "template": " {{ .Icon }} "
         },
         {
           "type": "antigravity",
           "style": "diamond",
-          "trailing_diamond": "",
+          "trailing_diamond": "\ue0b0",
           "foreground": "p:darktext",
           "background": "p:gemini_blue",
-          "template": "  {{ replace \"Gemini \" \"\" .Model.DisplayName | replace \" (High)\" \" \" | replace \" (Medium)\" \" \" | replace \" (Low)\" \" \" | replace \"3.8 Flash\" \"3.8 F\" }}{{ if .ExecutionMode }} [󰸋 {{ .ExecutionMode }}]{{ end }} "
+          "template": " \uf1a0 {{ replace \"Gemini \" \"\" .Model.DisplayName | replace \" (High)\" \" \uf102\" | replace \" (Medium)\" \" \uf077\" | replace \" (Low)\" \" \uf068\" | replace \"3.8 Flash\" \"3.8 F\" }}{{ if .ExecutionMode }} [\udb83\ude0b {{ .ExecutionMode }}]{{ end }} "
         },
         {
           "type": "git",
           "style": "diamond",
-          "trailing_diamond": "",
+          "trailing_diamond": "\ue0b0",
           "foreground": "p:slate",
           "background": "p:git_green",
           "background_templates": [
             "{{ if or .Working.Changed .Staging.Changed }}p:warn_yellow{{ end }}",
             "{{ if and (gt .Ahead 0) (gt .Behind 0) }}p:alert_red{{ end }}"
           ],
-          "template": "  {{ .RepoName }}   {{ .HEAD }}{{ if .BranchStatus }} {{ .BranchStatus }}{{ end }}{{ if .Working.Changed }}  {{ .Working.String }}{{ end }}{{ if .Staging.Changed }}  {{ .Staging.String }}{{ end }} "
+          "template": "  {{ .RepoName }}  \uf418 {{ .HEAD }}{{ if .BranchStatus }} {{ .BranchStatus }}{{ end }}{{ if .Working.Changed }}  {{ .Working.String }}{{ end }}{{ if .Staging.Changed }}  {{ .Staging.String }}{{ end }} "
         },
         {
           "type": "antigravity",
           "style": "diamond",
-          "trailing_diamond": "",
+          "trailing_diamond": "\ue0b4",
           "foreground": "p:whitetext",
           "background": "p:slate",
           "background_templates": [
             "{{ if gt .TokenUsagePercent 80.0 }}p:alert_red{{ end }}",
             "{{ if and (gt .TokenUsagePercent 60.0) (le .TokenUsagePercent 80.0) }}p:warn_yellow{{ end }}"
           ],
-          "template": "  {{ .TokenGaugeUsed }} {{ .TokenUsagePercent }}%{{ if and .FormattedTokens (ne .FormattedTokens \"0\") }} ({{ .FormattedTokens }}){{ end }}{{ if .ContextWindow.CurrentUsage }}{{ $cu := .ContextWindow.CurrentUsage }}{{ if or $cu.InputTokens $cu.OutputTokens }} [↓{{ $cin := $cu.InputTokens }}{{ if ge $cin 1000000 }}{{ printf \"%.1fM\" (divf $cin 1000000) }}{{ else if ge $cin 1000 }}{{ printf \"%.1fK\" (divf $cin 1000) }}{{ else }}{{ $cin }}{{ end }} ↑{{ $cout := $cu.OutputTokens }}{{ if ge $cout 1000000 }}{{ printf \"%.1fM\" (divf $cout 1000000) }}{{ else if ge $cout 1000 }}{{ printf \"%.1fK\" (divf $cout 1000) }}{{ else }}{{ $cout }}{{ end }}]{{ end }}{{ end }}{{ if .Exceeds200KTokens }} 󰀦200K{{ end }} "
+          "template": " \uf2d0 {{ .TokenGaugeUsed }} {{ .TokenUsagePercent }}%{{ if and .FormattedTokens (ne .FormattedTokens \"0\") }} ({{ .FormattedTokens }}){{ end }}{{ if .ContextWindow.CurrentUsage }}{{ $cu := .ContextWindow.CurrentUsage }}{{ if or $cu.InputTokens $cu.OutputTokens }} [\u2193{{ $cin := $cu.InputTokens }}{{ if ge $cin 1000000 }}{{ printf \"%.1fM\" (divf $cin 1000000) }}{{ else if ge $cin 1000 }}{{ printf \"%.1fK\" (divf $cin 1000) }}{{ else }}{{ $cin }}{{ end }} \u2191{{ $cout := $cu.OutputTokens }}{{ if ge $cout 1000000 }}{{ printf \"%.1fM\" (divf $cout 1000000) }}{{ else if ge $cout 1000 }}{{ printf \"%.1fK\" (divf $cout 1000) }}{{ else }}{{ $cout }}{{ end }}]{{ end }}{{ end }}{{ if .Exceeds200KTokens }} \udb80\udc26200K{{ end }} "
         }
       ]
     },
@@ -79,35 +80,35 @@
         {
           "type": "antigravity",
           "style": "diamond",
-          "leading_diamond": "",
-          "trailing_diamond": "",
+          "leading_diamond": "\ue0b6",
+          "trailing_diamond": "\ue0b0",
           "foreground": "p:whitetext",
           "background": "p:indigo",
           "background_templates": [
             "{{ $fam := (ternary \"gemini\" \"3p\" (contains \"gemini\" (lower .Model.ID))) }}{{ $q := index .Quota (printf \"%s-5h\" $fam) }}{{ $p := -1 }}{{ if $q.RemainingFraction }}{{ $p = int (addf 0.5 (subf 100 (mulf $q.RemainingFraction 100))) }}{{ end }}{{ if gt $p 80 }}p:alert_red{{ end }}",
             "{{ $fam := (ternary \"gemini\" \"3p\" (contains \"gemini\" (lower .Model.ID))) }}{{ $q := index .Quota (printf \"%s-5h\" $fam) }}{{ $p := -1 }}{{ if $q.RemainingFraction }}{{ $p = int (addf 0.5 (subf 100 (mulf $q.RemainingFraction 100))) }}{{ end }}{{ if and (gt $p 60) (le $p 80) }}p:warn_yellow{{ end }}"
           ],
-          "template": "  5h: {{ $fam := (ternary \"gemini\" \"3p\" (contains \"gemini\" (lower .Model.ID))) }}{{ $q := index .Quota (printf \"%s-5h\" $fam) }}{{ $p := -1 }}{{ if $q.RemainingFraction }}{{ $p = int (addf 0.5 (subf 100 (mulf $q.RemainingFraction 100))) }}{{ end }}{{ if ge $p 0 }}{{ $f := div (mul $p 5) 100 }}{{ repeat (int $f) \"▰\" }}{{ repeat (int (sub 5 $f)) \"▱\" }} {{ $p }}%{{ $s := 0 }}{{ if $q.ResetTime }}{{ $s = sub (toDate \"2006-01-02T15:04:05Z07:00\" $q.ResetTime | unixEpoch | int64) (now | unixEpoch | int64) }}{{ else if $q.ResetInSeconds }}{{ $s = int $q.ResetInSeconds }}{{ end }}{{ if gt (int $s) 0 }} 󰔟{{ if ge (int $s) 86400 }}{{ div $s 86400 }}d{{ div (mod $s 86400) 3600 }}h{{ else }}{{ div $s 3600 }}h{{ div (mod $s 3600) 60 }}m{{ end }}{{ end }}{{ else }}n/a{{ end }} "
+          "template": " \uf017 5h: {{ $fam := (ternary \"gemini\" \"3p\" (contains \"gemini\" (lower .Model.ID))) }}{{ $q := index .Quota (printf \"%s-5h\" $fam) }}{{ $p := -1 }}{{ if $q.RemainingFraction }}{{ $p = int (addf 0.5 (subf 100 (mulf $q.RemainingFraction 100))) }}{{ end }}{{ if ge $p 0 }}{{ $f := div (mul $p 5) 100 }}{{ repeat (int $f) \"\u25b0\" }}{{ repeat (int (sub 5 $f)) \"\u25b1\" }} {{ $p }}%{{ $s := 0 }}{{ if $q.ResetTime }}{{ $s = sub (toDate \"2006-01-02T15:04:05Z07:00\" $q.ResetTime | unixEpoch | int64) (now | unixEpoch | int64) }}{{ else if $q.ResetInSeconds }}{{ $s = int $q.ResetInSeconds }}{{ end }}{{ if gt (int $s) 0 }} \udb81\udd1f{{ if ge (int $s) 86400 }}{{ div $s 86400 }}d{{ div (mod $s 86400) 3600 }}h{{ else }}{{ div $s 3600 }}h{{ div (mod $s 3600) 60 }}m{{ end }}{{ end }}{{ else }}n/a{{ end }} "
         },
         {
           "type": "antigravity",
           "style": "diamond",
-          "trailing_diamond": "",
+          "trailing_diamond": "\ue0b0",
           "foreground": "p:whitetext",
           "background": "p:darkblue",
           "background_templates": [
             "{{ $fam := (ternary \"gemini\" \"3p\" (contains \"gemini\" (lower .Model.ID))) }}{{ $q := index .Quota (printf \"%s-weekly\" $fam) }}{{ $p := -1 }}{{ if $q.RemainingFraction }}{{ $p = int (addf 0.5 (subf 100 (mulf $q.RemainingFraction 100))) }}{{ end }}{{ if gt $p 80 }}p:alert_red{{ end }}",
             "{{ $fam := (ternary \"gemini\" \"3p\" (contains \"gemini\" (lower .Model.ID))) }}{{ $q := index .Quota (printf \"%s-weekly\" $fam) }}{{ $p := -1 }}{{ if $q.RemainingFraction }}{{ $p = int (addf 0.5 (subf 100 (mulf $q.RemainingFraction 100))) }}{{ end }}{{ if and (gt $p 60) (le $p 80) }}p:warn_yellow{{ end }}"
           ],
-          "template": "  7d: {{ $fam := (ternary \"gemini\" \"3p\" (contains \"gemini\" (lower .Model.ID))) }}{{ $q := index .Quota (printf \"%s-weekly\" $fam) }}{{ $p := -1 }}{{ if $q.RemainingFraction }}{{ $p = int (addf 0.5 (subf 100 (mulf $q.RemainingFraction 100))) }}{{ end }}{{ if ge $p 0 }}{{ $f := div (mul $p 5) 100 }}{{ repeat (int $f) \"▰\" }}{{ repeat (int (sub 5 $f)) \"▱\" }} {{ $p }}%{{ $s := 0 }}{{ if $q.ResetTime }}{{ $s = sub (toDate \"2006-01-02T15:04:05Z07:00\" $q.ResetTime | unixEpoch | int64) (now | unixEpoch | int64) }}{{ else if $q.ResetInSeconds }}{{ $s = int $q.ResetInSeconds }}{{ end }}{{ if gt (int $s) 0 }} 󰔟{{ if ge (int $s) 86400 }}{{ div $s 86400 }}d{{ div (mod $s 86400) 3600 }}h{{ else }}{{ div $s 3600 }}h{{ div (mod $s 3600) 60 }}m{{ end }}{{ end }}{{ else }}n/a{{ end }} "
+          "template": " \uf073 7d: {{ $fam := (ternary \"gemini\" \"3p\" (contains \"gemini\" (lower .Model.ID))) }}{{ $q := index .Quota (printf \"%s-weekly\" $fam) }}{{ $p := -1 }}{{ if $q.RemainingFraction }}{{ $p = int (addf 0.5 (subf 100 (mulf $q.RemainingFraction 100))) }}{{ end }}{{ if ge $p 0 }}{{ $f := div (mul $p 5) 100 }}{{ repeat (int $f) \"\u25b0\" }}{{ repeat (int (sub 5 $f)) \"\u25b1\" }} {{ $p }}%{{ $s := 0 }}{{ if $q.ResetTime }}{{ $s = sub (toDate \"2006-01-02T15:04:05Z07:00\" $q.ResetTime | unixEpoch | int64) (now | unixEpoch | int64) }}{{ else if $q.ResetInSeconds }}{{ $s = int $q.ResetInSeconds }}{{ end }}{{ if gt (int $s) 0 }} \udb81\udd1f{{ if ge (int $s) 86400 }}{{ div $s 86400 }}d{{ div (mod $s 86400) 3600 }}h{{ else }}{{ div $s 3600 }}h{{ div (mod $s 3600) 60 }}m{{ end }}{{ end }}{{ else }}n/a{{ end }} "
         },
         {
           "type": "antigravity",
           "style": "diamond",
-          "trailing_diamond": "",
+          "trailing_diamond": "\ue0b4",
           "foreground": "p:whitetext",
           "background": "p:charcoal",
-          "template": " {{ if or .ContextWindow.TotalInputTokens .ContextWindow.TotalOutputTokens }}󰒠 [<p:cyan>↓{{ $in := .ContextWindow.TotalInputTokens }}{{ if ge $in 1000000 }}{{ printf \"%.1fM\" (divf $in 1000000) }}{{ else if ge $in 1000 }}{{ printf \"%.1fK\" (divf $in 1000) }}{{ else }}{{ $in }}{{ end }}</> <p:amber>↑{{ $out := .ContextWindow.TotalOutputTokens }}{{ if ge $out 1000000 }}{{ printf \"%.1fM\" (divf $out 1000000) }}{{ else if ge $out 1000 }}{{ printf \"%.1fK\" (divf $out 1000) }}{{ else }}{{ $out }}{{ end }}</>]{{ else }}󰒠 n/a{{ end }} "
+          "template": " {{ if or .ContextWindow.TotalInputTokens .ContextWindow.TotalOutputTokens }}\udb81\udca0 [<p:cyan>\u2193{{ $in := .ContextWindow.TotalInputTokens }}{{ if ge $in 1000000 }}{{ printf \"%.1fM\" (divf $in 1000000) }}{{ else if ge $in 1000 }}{{ printf \"%.1fK\" (divf $in 1000) }}{{ else }}{{ $in }}{{ end }}</> <p:amber>\u2191{{ $out := .ContextWindow.TotalOutputTokens }}{{ if ge $out 1000000 }}{{ printf \"%.1fM\" (divf $out 1000000) }}{{ else if ge $out 1000 }}{{ printf \"%.1fK\" (divf $out 1000) }}{{ else }}{{ $out }}{{ end }}</>]{{ else }}\udb81\udca0 n/a{{ end }} "
         }
       ]
     },
@@ -119,19 +120,19 @@
         {
           "type": "antigravity",
           "style": "diamond",
-          "leading_diamond": "",
-          "trailing_diamond": "",
+          "leading_diamond": "\ue0b6",
+          "trailing_diamond": "\ue0b0",
           "foreground": "p:whitetext",
           "background": "p:slate",
-          "template": " {{ if .ContextWindow.CurrentUsage }}{{ $cu := .ContextWindow.CurrentUsage }}󰆼 last: r{{ $r := $cu.CacheReadInputTokens }}{{ if ge $r 1000000 }}{{ printf \"%.1fM\" (divf $r 1000000) }}{{ else if ge $r 1000 }}{{ printf \"%.1fK\" (divf $r 1000) }}{{ else }}{{ $r }}{{ end }} w{{ $w := $cu.CacheCreationInputTokens }}{{ if ge $w 1000000 }}{{ printf \"%.1fM\" (divf $w 1000000) }}{{ else if ge $w 1000 }}{{ printf \"%.1fK\" (divf $w 1000) }}{{ else }}{{ $w }}{{ end }}{{ else }}󰆼 last: n/a{{ end }} "
+          "template": " {{ if .ContextWindow.CurrentUsage }}{{ $cu := .ContextWindow.CurrentUsage }}\udb80\uddbc last: r{{ $r := $cu.CacheReadInputTokens }}{{ if ge $r 1000000 }}{{ printf \"%.1fM\" (divf $r 1000000) }}{{ else if ge $r 1000 }}{{ printf \"%.1fK\" (divf $r 1000) }}{{ else }}{{ $r }}{{ end }} w{{ $w := $cu.CacheCreationInputTokens }}{{ if ge $w 1000000 }}{{ printf \"%.1fM\" (divf $w 1000000) }}{{ else if ge $w 1000 }}{{ printf \"%.1fK\" (divf $w 1000) }}{{ else }}{{ $w }}{{ end }}{{ else }}\udb80\uddbc last: n/a{{ end }} "
         },
         {
           "type": "antigravity",
           "style": "diamond",
-          "trailing_diamond": "",
+          "trailing_diamond": "\ue0b4",
           "foreground": "p:whitetext",
           "background": "p:darkblue",
-          "template": " {{ $fam := (ternary \"3p\" \"gemini\" (contains \"gemini\" (lower .Model.ID))) }}{{ $q := index .Quota (printf \"%s-5h\" $fam) }}{{ $p := -1 }}{{ if $q.RemainingFraction }}{{ $p = int (addf 0.5 (subf 100 (mulf $q.RemainingFraction 100))) }}{{ end }}{{ $q5 := $q }}{{ $p5 := $p }}{{ $fam := (ternary \"3p\" \"gemini\" (contains \"gemini\" (lower .Model.ID))) }}{{ $q := index .Quota (printf \"%s-weekly\" $fam) }}{{ $p := -1 }}{{ if $q.RemainingFraction }}{{ $p = int (addf 0.5 (subf 100 (mulf $q.RemainingFraction 100))) }}{{ end }}{{ if or (ge $p5 0) (ge $p 0) }}{{ $fam }} 5h:{{ if ge $p5 0 }}{{ $p5 }}%{{ else }}n/a{{ end }} 7d:{{ if ge $p 0 }}{{ $p }}%{{ else }}n/a{{ end }}{{ end }}{{ if .PlanTier }} · {{ .PlanTier }}{{ end }} "
+          "template": " {{ $fam := (ternary \"3p\" \"gemini\" (contains \"gemini\" (lower .Model.ID))) }}{{ $q := index .Quota (printf \"%s-5h\" $fam) }}{{ $p := -1 }}{{ if $q.RemainingFraction }}{{ $p = int (addf 0.5 (subf 100 (mulf $q.RemainingFraction 100))) }}{{ end }}{{ $q5 := $q }}{{ $p5 := $p }}{{ $fam := (ternary \"3p\" \"gemini\" (contains \"gemini\" (lower .Model.ID))) }}{{ $q := index .Quota (printf \"%s-weekly\" $fam) }}{{ $p := -1 }}{{ if $q.RemainingFraction }}{{ $p = int (addf 0.5 (subf 100 (mulf $q.RemainingFraction 100))) }}{{ end }}{{ if or (ge $p5 0) (ge $p 0) }}{{ $fam }} 5h:{{ if ge $p5 0 }}{{ $p5 }}%{{ else }}n/a{{ end }} 7d:{{ if ge $p 0 }}{{ $p }}%{{ else }}n/a{{ end }}{{ end }}{{ if .PlanTier }} \u00b7 {{ .PlanTier }}{{ end }} "
         }
       ]
     }

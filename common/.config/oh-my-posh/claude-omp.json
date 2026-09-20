@@ -23,51 +23,52 @@
         {
           "type": "os",
           "style": "diamond",
-          "leading_diamond": "",
-          "trailing_diamond": "",
+          "leading_diamond": "\ue0b6",
+          "trailing_diamond": "\ue0b0",
           "foreground": "p:darktext",
           "background": "p:teal",
           "options": {
             "display_distro_name": false,
-            "macos": "",
-            "linux": "",
-            "wsl": "",
+            "macos": "\uf179",
+            "linux": "\uf17c",
+            "ubuntu": "\uf17c",
+            "wsl": "\uf17c",
             "wsl_separator": "",
-            "windows": ""
+            "windows": "\uf17a"
           },
           "template": " {{ .Icon }} "
         },
         {
           "type": "claude",
           "style": "diamond",
-          "trailing_diamond": "",
+          "trailing_diamond": "\ue0b0",
           "foreground": "p:whitetext",
           "background": "p:claude_orange",
-          "template": " <b>C</b> 󰯉 {{ replace \"Claude \" \"\" .Model.DisplayName }}{{ if .Effort }} {{ $e := .Effort.Level }}{{ if eq $e \"low\" }}{{ else if eq $e \"medium\" }}{{ else if eq $e \"high\" }}{{ else if eq $e \"xhigh\" }}󰶼{{ else if eq $e \"max\" }}󰈸{{ else }}[{{ $e }}]{{ end }}{{ end }}{{ if and .Thinking .Thinking.Enabled }} 󰧑{{ end }}{{ if .FastMode }} ⚡{{ end }}{{ if .Agent }} [🤖 {{ .Agent.Name }}]{{ end }}{{ if .Vim }} [{{ .Vim.Mode }}]{{ end }} "
+          "template": " <b>C</b> \udb82\udfc9 {{ replace \"Claude \" \"\" .Model.DisplayName }}{{ if .Effort }} {{ $e := .Effort.Level }}{{ if eq $e \"low\" }}\uf068{{ else if eq $e \"medium\" }}\uf077{{ else if eq $e \"high\" }}\uf102{{ else if eq $e \"xhigh\" }}\udb83\uddbc{{ else if eq $e \"max\" }}\udb80\ude38{{ else }}[{{ $e }}]{{ end }}{{ end }}{{ if and .Thinking .Thinking.Enabled }} \udb82\uddd1{{ end }}{{ if .FastMode }} \u26a1{{ end }}{{ if .Agent }} [\ud83e\udd16 {{ .Agent.Name }}]{{ end }}{{ if .Vim }} [{{ .Vim.Mode }}]{{ end }} "
         },
         {
           "type": "git",
           "style": "diamond",
-          "trailing_diamond": "",
+          "trailing_diamond": "\ue0b0",
           "foreground": "p:slate",
           "background": "p:git_green",
           "background_templates": [
             "{{ if or .Working.Changed .Staging.Changed }}p:warn_yellow{{ end }}",
             "{{ if and (gt .Ahead 0) (gt .Behind 0) }}p:alert_red{{ end }}"
           ],
-          "template": "  {{ .RepoName }}   {{ .HEAD }}{{ if .BranchStatus }} {{ .BranchStatus }}{{ end }}{{ if .Working.Changed }}  {{ .Working.String }}{{ end }}{{ if .Staging.Changed }}  {{ .Staging.String }}{{ end }} "
+          "template": "  {{ .RepoName }}  \uf418 {{ .HEAD }}{{ if .BranchStatus }} {{ .BranchStatus }}{{ end }}{{ if .Working.Changed }}  {{ .Working.String }}{{ end }}{{ if .Staging.Changed }}  {{ .Staging.String }}{{ end }} "
         },
         {
           "type": "claude",
           "style": "diamond",
-          "trailing_diamond": "",
+          "trailing_diamond": "\ue0b4",
           "foreground": "p:whitetext",
           "background": "p:darkblue",
           "background_templates": [
             "{{ if gt .TokenUsagePercent 80.0 }}p:alert_red{{ end }}",
             "{{ if and (gt .TokenUsagePercent 60.0) (le .TokenUsagePercent 80.0) }}p:warn_yellow{{ end }}"
           ],
-          "template": "  {{ .TokenGaugeUsed }} {{ .TokenUsagePercent }}%{{ if and .FormattedTokens (ne .FormattedTokens \"0\") }} ({{ .FormattedTokens }}){{ end }}{{ if .ContextWindow.CurrentUsage }}{{ $cu := .ContextWindow.CurrentUsage }}{{ if or $cu.InputTokens $cu.OutputTokens }} [↓{{ $cin := $cu.InputTokens }}{{ if ge $cin 1000000 }}{{ printf \"%.1fM\" (divf $cin 1000000) }}{{ else if ge $cin 1000 }}{{ printf \"%.1fK\" (divf $cin 1000) }}{{ else }}{{ $cin }}{{ end }} ↑{{ $cout := $cu.OutputTokens }}{{ if ge $cout 1000000 }}{{ printf \"%.1fM\" (divf $cout 1000000) }}{{ else if ge $cout 1000 }}{{ printf \"%.1fK\" (divf $cout 1000) }}{{ else }}{{ $cout }}{{ end }}]{{ end }}{{ end }}{{ if .Exceeds200KTokens }} 󰀦200K{{ end }} "
+          "template": " \uf2d0 {{ .TokenGaugeUsed }} {{ .TokenUsagePercent }}%{{ if and .FormattedTokens (ne .FormattedTokens \"0\") }} ({{ .FormattedTokens }}){{ end }}{{ if .ContextWindow.CurrentUsage }}{{ $cu := .ContextWindow.CurrentUsage }}{{ if or $cu.InputTokens $cu.OutputTokens }} [\u2193{{ $cin := $cu.InputTokens }}{{ if ge $cin 1000000 }}{{ printf \"%.1fM\" (divf $cin 1000000) }}{{ else if ge $cin 1000 }}{{ printf \"%.1fK\" (divf $cin 1000) }}{{ else }}{{ $cin }}{{ end }} \u2191{{ $cout := $cu.OutputTokens }}{{ if ge $cout 1000000 }}{{ printf \"%.1fM\" (divf $cout 1000000) }}{{ else if ge $cout 1000 }}{{ printf \"%.1fK\" (divf $cout 1000) }}{{ else }}{{ $cout }}{{ end }}]{{ end }}{{ end }}{{ if .Exceeds200KTokens }} \udb80\udc26200K{{ end }} "
         }
       ]
     },
@@ -79,35 +80,35 @@
         {
           "type": "claude",
           "style": "diamond",
-          "leading_diamond": "",
-          "trailing_diamond": "",
+          "leading_diamond": "\ue0b6",
+          "trailing_diamond": "\ue0b0",
           "foreground": "p:whitetext",
           "background": "p:indigo",
           "background_templates": [
             "{{ if and .FiveHourUsage (gt .FiveHourUsage 80.0) }}p:alert_red{{ end }}",
             "{{ if and .FiveHourUsage (gt .FiveHourUsage 60.0) (le .FiveHourUsage 80.0) }}p:warn_yellow{{ end }}"
           ],
-          "template": "  5h: {{ if .FiveHourUsage }}{{ .FiveHourGauge }} {{ .FiveHourUsage }}%{{ $s := int .FiveHourResetsIn.Seconds }}{{ if gt $s 0 }} 󰔟{{ if ge $s 86400 }}{{ div $s 86400 }}d{{ div (mod $s 86400) 3600 }}h{{ else }}{{ div $s 3600 }}h{{ div (mod $s 3600) 60 }}m{{ end }}{{ end }}{{ else }}n/a{{ end }} "
+          "template": " \uf017 5h: {{ if .FiveHourUsage }}{{ .FiveHourGauge }} {{ .FiveHourUsage }}%{{ $s := int .FiveHourResetsIn.Seconds }}{{ if gt $s 0 }} \udb81\udd1f{{ if ge $s 86400 }}{{ div $s 86400 }}d{{ div (mod $s 86400) 3600 }}h{{ else }}{{ div $s 3600 }}h{{ div (mod $s 3600) 60 }}m{{ end }}{{ end }}{{ else }}n/a{{ end }} "
         },
         {
           "type": "claude",
           "style": "diamond",
-          "trailing_diamond": "",
+          "trailing_diamond": "\ue0b0",
           "foreground": "p:whitetext",
           "background": "p:darkblue",
           "background_templates": [
             "{{ if and .SevenDayUsage (gt .SevenDayUsage 80.0) }}p:alert_red{{ end }}",
             "{{ if and .SevenDayUsage (gt .SevenDayUsage 60.0) (le .SevenDayUsage 80.0) }}p:warn_yellow{{ end }}"
           ],
-          "template": "  7d: {{ if .SevenDayUsage }}{{ .SevenDayGauge }} {{ .SevenDayUsage }}%{{ $s := int .SevenDayResetsIn.Seconds }}{{ if gt $s 0 }} 󰔟{{ if ge $s 86400 }}{{ div $s 86400 }}d{{ div (mod $s 86400) 3600 }}h{{ else }}{{ div $s 3600 }}h{{ div (mod $s 3600) 60 }}m{{ end }}{{ end }}{{ else }}n/a{{ end }} "
+          "template": " \uf073 7d: {{ if .SevenDayUsage }}{{ .SevenDayGauge }} {{ .SevenDayUsage }}%{{ $s := int .SevenDayResetsIn.Seconds }}{{ if gt $s 0 }} \udb81\udd1f{{ if ge $s 86400 }}{{ div $s 86400 }}d{{ div (mod $s 86400) 3600 }}h{{ else }}{{ div $s 3600 }}h{{ div (mod $s 3600) 60 }}m{{ end }}{{ end }}{{ else }}n/a{{ end }} "
         },
         {
           "type": "claude",
           "style": "diamond",
-          "trailing_diamond": "",
+          "trailing_diamond": "\ue0b4",
           "foreground": "p:whitetext",
           "background": "p:charcoal",
-          "template": " {{ if .Env.CLAUDE_OMP_IN }}󰒠 [<p:cyan>↓{{ .Env.CLAUDE_OMP_IN }}</> <p:amber>↑{{ .Env.CLAUDE_OMP_OUT }}</>]{{ else }}󰒠 n/a{{ end }} "
+          "template": " {{ if .Env.CLAUDE_OMP_IN }}\udb81\udca0 [<p:cyan>\u2193{{ .Env.CLAUDE_OMP_IN }}</> <p:amber>\u2191{{ .Env.CLAUDE_OMP_OUT }}</>]{{ else }}\udb81\udca0 n/a{{ end }} "
         }
       ]
     },
@@ -119,19 +120,19 @@
         {
           "type": "claude",
           "style": "diamond",
-          "leading_diamond": "",
-          "trailing_diamond": "",
+          "leading_diamond": "\ue0b6",
+          "trailing_diamond": "\ue0b0",
           "foreground": "p:whitetext",
           "background": "p:slate",
-          "template": " {{ if .ContextWindow.CurrentUsage }}{{ $cu := .ContextWindow.CurrentUsage }}󰆼 last: r{{ $r := $cu.CacheReadInputTokens }}{{ if ge $r 1000000 }}{{ printf \"%.1fM\" (divf $r 1000000) }}{{ else if ge $r 1000 }}{{ printf \"%.1fK\" (divf $r 1000) }}{{ else }}{{ $r }}{{ end }} w{{ $w := $cu.CacheCreationInputTokens }}{{ if ge $w 1000000 }}{{ printf \"%.1fM\" (divf $w 1000000) }}{{ else if ge $w 1000 }}{{ printf \"%.1fK\" (divf $w 1000) }}{{ else }}{{ $w }}{{ end }}{{ else }}󰆼 last: n/a{{ end }} "
+          "template": " {{ if .ContextWindow.CurrentUsage }}{{ $cu := .ContextWindow.CurrentUsage }}\udb80\uddbc last: r{{ $r := $cu.CacheReadInputTokens }}{{ if ge $r 1000000 }}{{ printf \"%.1fM\" (divf $r 1000000) }}{{ else if ge $r 1000 }}{{ printf \"%.1fK\" (divf $r 1000) }}{{ else }}{{ $r }}{{ end }} w{{ $w := $cu.CacheCreationInputTokens }}{{ if ge $w 1000000 }}{{ printf \"%.1fM\" (divf $w 1000000) }}{{ else if ge $w 1000 }}{{ printf \"%.1fK\" (divf $w 1000) }}{{ else }}{{ $w }}{{ end }}{{ else }}\udb80\uddbc last: n/a{{ end }} "
         },
         {
           "type": "claude",
           "style": "diamond",
-          "trailing_diamond": "",
+          "trailing_diamond": "\ue0b4",
           "foreground": "p:whitetext",
           "background": "p:darkblue",
-          "template": " {{ if .Env.CLAUDE_OMP_IN }}󰒠 cache r{{ .Env.CLAUDE_OMP_CACHE_R }} w{{ .Env.CLAUDE_OMP_CACHE_W }}{{ if .Env.CLAUDE_OMP_HIT }} hit {{ .Env.CLAUDE_OMP_HIT }}%{{ end }}{{ if and .Env.CLAUDE_OMP_MISSES (ne .Env.CLAUDE_OMP_MISSES \"0\") }} <p:amber>miss {{ .Env.CLAUDE_OMP_MISSES }}</>{{ end }}{{ if .Env.CLAUDE_OMP_COLD_AT }} 󰜗 {{ .Env.CLAUDE_OMP_COLD_AT }}{{ end }} · {{ .Env.CLAUDE_OMP_REQS }} req{{ else }}󰒠 cache n/a{{ end }} "
+          "template": " {{ if .Env.CLAUDE_OMP_IN }}\udb81\udca0 cache r{{ .Env.CLAUDE_OMP_CACHE_R }} w{{ .Env.CLAUDE_OMP_CACHE_W }}{{ if .Env.CLAUDE_OMP_HIT }} hit {{ .Env.CLAUDE_OMP_HIT }}%{{ end }}{{ if and .Env.CLAUDE_OMP_MISSES (ne .Env.CLAUDE_OMP_MISSES \"0\") }} <p:amber>miss {{ .Env.CLAUDE_OMP_MISSES }}</>{{ end }}{{ if .Env.CLAUDE_OMP_COLD_AT }} \udb81\udf17 {{ .Env.CLAUDE_OMP_COLD_AT }}{{ end }} \u00b7 {{ .Env.CLAUDE_OMP_REQS }} req{{ else }}\udb81\udca0 cache n/a{{ end }} "
         }
       ]
     },
@@ -143,27 +144,27 @@
         {
           "type": "claude",
           "style": "diamond",
-          "leading_diamond": "",
-          "trailing_diamond": "",
+          "leading_diamond": "\ue0b6",
+          "trailing_diamond": "\ue0b0",
           "foreground": "p:whitetext",
           "background": "p:charcoal",
-          "template": " 󰓃 {{ if gt .Cost.TotalCostUSD 0.0 }}{{ .FormattedCost }}{{ else }}$0.00{{ end }}{{ if .Env.CLAUDE_OMP_BURN }} (󰈸 ${{ .Env.CLAUDE_OMP_BURN }}/h){{ end }} "
+          "template": " \udb81\udcc3 {{ if gt .Cost.TotalCostUSD 0.0 }}{{ .FormattedCost }}{{ else }}$0.00{{ end }}{{ if .Env.CLAUDE_OMP_BURN }} (\udb80\ude38 ${{ .Env.CLAUDE_OMP_BURN }}/h){{ end }} "
         },
         {
           "type": "claude",
           "style": "diamond",
-          "trailing_diamond": "",
+          "trailing_diamond": "\ue0b0",
           "foreground": "p:whitetext",
           "background": "p:slate",
-          "template": "{{ if gt .Cost.TotalDurationMS 0 }} 󰍖 {{ .FormattedDuration }}{{ if gt .Cost.TotalAPIDurationMS 0 }} (api {{ .FormattedAPIDuration }}){{ end }} {{ end }}"
+          "template": "{{ if gt .Cost.TotalDurationMS 0 }} \udb80\udf56 {{ .FormattedDuration }}{{ if gt .Cost.TotalAPIDurationMS 0 }} (api {{ .FormattedAPIDuration }}){{ end }} {{ end }}"
         },
         {
           "type": "claude",
           "style": "diamond",
-          "trailing_diamond": "",
+          "trailing_diamond": "\ue0b4",
           "foreground": "p:whitetext",
           "background": "p:darkblue",
-          "template": "{{ if or .Cost.TotalLinesAdded .Cost.TotalLinesRemoved }} 󱓉 <p:cyan>+{{ .Cost.TotalLinesAdded }}</>/<p:amber>-{{ .Cost.TotalLinesRemoved }}</> {{ end }}"
+          "template": "{{ if or .Cost.TotalLinesAdded .Cost.TotalLinesRemoved }} \udb85\udcc9 <p:cyan>+{{ .Cost.TotalLinesAdded }}</>/<p:amber>-{{ .Cost.TotalLinesRemoved }}</> {{ end }}"
         }
       ]
     }
