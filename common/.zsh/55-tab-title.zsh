@@ -3,9 +3,31 @@
 # profile name. Compact format tailored for narrow tabs and rich prompts.
 #
 # Terminal requirements:
-# In Windows Terminal Profile Settings -> WSL Ubuntu (or general profile):
+#
+# Windows Terminal (WSL profiles):
 #   - Clear the "Tab title" field (leave it blank / use reset arrow).
-#   - Ensure "Suppress title changes" is Off.
+#   - Profile -> Additional settings -> Advanced -> "Suppress application
+#     title changes" must be Off. WSL auto-registers a Fragments extension
+#     (%LOCALAPPDATA%\Microsoft\Windows Terminal\Fragments\Microsoft.WSL\
+#     <profile-guid>.json) that sets suppressApplicationTitle: true by
+#     default for the distro's profile. That default isn't visible on the
+#     main profile page (only the "Tab title" field is) and silently
+#     swallows every OSC title write, so it must be overridden explicitly
+#     per profile in settings.json with "suppressApplicationTitle": false.
+#     Symptom when suppressed: title stays fixed on the profile name (e.g.
+#     "Ubuntu-24.04") and a manually-sent, well-formed OSC 0 sequence
+#     produces no visible change and no garbled output (WT parses it, then
+#     discards it) -- that silent-discard behavior is the tell, as opposed
+#     to a malformed escape (e.g. printf's "\e" isn't a real ESC byte in
+#     zsh's builtin printf, only in bash/coreutils) which prints literal
+#     garbage text instead.
+#
+# macOS Terminal.app:
+#   - Preferences/Settings -> Profiles -> <profile> -> Window tab -> under
+#     "Title", uncheck all boxes (Active Process Name, Shell, Working
+#     Directory, TTY, Window Size, etc.). If any are checked, Terminal.app
+#     composes its own title from those (e.g. "<path> - <folder> - zsh")
+#     and ignores OSC title writes entirely.
 
 # Guard: only run in interactive terminals that support OSC sequences
 [[ -o interactive ]] && [[ -t 1 ]] && [[ "$TERM" != "dumb" ]] || return 0
