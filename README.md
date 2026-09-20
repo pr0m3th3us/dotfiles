@@ -27,6 +27,7 @@ A modular, cross-platform dotfile repository using **GNU Stow** for configuratio
         ├── 40-aliases.zsh      # Common aliases & binary normalization
         ├── 45-functions.zsh    # Shell functions (restow)
         ├── 50-prompt.zsh       # Oh My Posh initialization
+        ├── 55-tab-title.zsh    # Dynamic terminal tab title (folder/command/ssh host)
         └── os/
             ├── mac.zsh         # macOS-specific environment & aliases
             └── wsl.zsh         # WSL-specific clipboard & interop
