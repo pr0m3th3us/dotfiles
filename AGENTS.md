@@ -5,7 +5,7 @@ Shared rules for every agent working in this repo (Claude via `CLAUDE.md`, Gemin
 ## What this repo is
 
 - `common/` is a **GNU Stow package**. `install.sh` links its contents into `$HOME`, so `~/.zshrc`, `~/.zsh` and `~/.config/oh-my-posh` are symlinks back into this repo. Editing either path edits the same tracked file; there are no copies.
-- `agent-skills/` is symlinked as a whole to `~/.claude/skills` and `~/.gemini/config/skills`.
+- `~/.claude/skills` and `~/.gemini/config/skills` are real directories. `install.sh` fills them with one symlink per skill: every folder with a `SKILL.md` under `agent-skills/`, plus every one under kno-hub's `kits/` when kno-hub is cloned (`$KNO_HUB_KITS_DIR`, default `~/projects/kno-hub/kits`). A new skill is not visible until `./install.sh` is re-run. Claude Code's own `synced/` cache lives in `~/.claude/skills` and is not part of this repo.
 - `deps.list` is the **single list** of binaries, packages and fonts the repo needs. `install.sh` reads it to check, install and report.
 - `install.sh` is the only bootstrap: dependency preflight → consent → install → link preflight → consent → stow → agent statusLine wiring.
 

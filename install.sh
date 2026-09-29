@@ -22,6 +22,12 @@ BACKUP_DIR="$HOME/.dotfiles_backup_$(date +%Y%m%d_%H%M%S)"
 # other programs, so we link the entries inside them instead.
 STOW_CONTAINERS=".config .local .local/share .local/bin"
 
+# Where each agent looks for skills, and where private kits may be cloned. Every
+# folder with a SKILL.md under agent-skills/ and the kits dir is linked in as one
+# skill; a machine without the kits dir simply skips it.
+SKILL_ROOTS=".claude/skills .gemini/config/skills"
+KNO_HUB_KITS_DIR="${KNO_HUB_KITS_DIR:-$HOME/projects/kno-hub/kits}"
+
 MODE="install"
 ASSUME_YES=0
 
@@ -446,7 +452,10 @@ classify_target() {
 }
 
 add_link() {
-  L_REL+=("$1") L_SRC+=("$2") L_KIND+=("$3") L_STATE+=("$(classify_target "$1" "$2")")
+  local state
+  state="$(classify_target "$1" "$2")"
+  [ "$3" = skill ] && [ -L "$HOME/$(dirname "$1")" ] && state=new
+  L_REL+=("$1") L_SRC+=("$2") L_KIND+=("$3") L_STATE+=("$state")
 }
 
 collect_stow_items() {
@@ -489,8 +498,7 @@ link_preflight() {
   section "Links into \$HOME"
   L_REL=() L_SRC=() L_STATE=() L_KIND=() CREATE_DIRS=""
   collect_stow_items ""
-  add_link ".claude/skills" "$DOTFILES_DIR/agent-skills" skill
-  add_link ".gemini/config/skills" "$DOTFILES_DIR/agent-skills" skill
+  collect_skill_items
 
   local i d
   for d in $CREATE_DIRS; do
@@ -552,6 +560,52 @@ apply_links() {
   for i in "${!L_REL[@]}"; do
     [ "${L_KIND[$i]}" = "skill" ] && ln -sfn "${L_SRC[$i]}" "$HOME/${L_REL[$i]}"
   done
+}
+
+planned_link() {
+  local i
+  for i in "${!L_REL[@]}"; do [ "${L_REL[$i]}" = "$1" ] && return 0; done
+  return 1
+}
+
+# Link each folder that has a SKILL.md (anything else, such as Claude Code's
+# synced/ cache, is not a skill). The first source to claim a name wins.
+link_skill_dirs() {
+  local dir name root
+  for dir in "$@"; do
+    dir="${dir%/}"
+    [ -f "$dir/SKILL.md" ] || continue
+    name="$(basename "$dir")"
+    for root in $SKILL_ROOTS; do
+      if planned_link "$root/$name"; then
+        [ "$root" = "${SKILL_ROOTS%% *}" ] && warn "skill '$name' from $dir skipped: another source already provides it"
+        continue
+      fi
+      add_link "$root/$name" "$dir" skill
+    done
+  done
+}
+
+collect_skill_items() {
+  local root link
+  # The old installer linked each root to agent-skills/ as a whole. Back that up
+  # like any other conflict, then rebuild the root as a real directory of links.
+  for root in $SKILL_ROOTS; do
+    if [ -L "$HOME/$root" ] || { [ -e "$HOME/$root" ] && [ ! -d "$HOME/$root" ]; }; then
+      L_REL+=("$root") L_SRC+=("") L_KIND+=(legacy) L_STATE+=(conflict)
+    elif [ ! -d "$HOME/$root" ]; then
+      CREATE_DIRS="$CREATE_DIRS $root"
+    fi
+  done
+  link_skill_dirs "$DOTFILES_DIR"/agent-skills/*/
+  [ -d "$KNO_HUB_KITS_DIR" ] && link_skill_dirs "$KNO_HUB_KITS_DIR"/*/
+  # A skill removed or renamed at its source leaves its link behind. Report only.
+  for root in $SKILL_ROOTS; do
+    for link in "$HOME/$root"/*; do
+      [ -L "$link" ] && [ ! -e "$link" ] && warn "dangling skill link ~/${link#"$HOME"/} (its source is gone; remove it by hand)"
+    done
+  done
+  return 0
 }
 
 # --- Agent statusLine wiring ----------------------------------------------------

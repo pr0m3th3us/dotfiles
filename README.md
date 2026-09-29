@@ -54,7 +54,7 @@ The installer asks before every change and is safe to re-run:
 2. **Consent:** `[a]ll missing / [r]equired only / [N]o`. `N` with required dependencies missing exits with nothing changed.
 3. **Install** via `apt`/`brew`, scripted installers, or the Nerd Font installer (on WSL the font goes onto the Windows host). Everything is re-checked; if a required dependency is still missing it stops before touching `$HOME`.
 4. **Link check (read-only).** Shows each item as ✔ linked, `+` new link, or `!` existing and not ours. Cross-checked with `stow -n` (a dry run). If an existing shell rc (e.g. `~/.zshrc`) is marked `!`, its active settings are printed: nothing in it is carried over, so move what you need into the repo (every machine) or `~/.zshrc.local` (this machine only) first.
-5. **Consent**, then any `!` items are **moved** to `~/.dotfiles_backup_<timestamp>/` (never deleted), `stow --restow common` links the package, and `agent-skills/` is linked to `~/.claude/skills` and `~/.gemini/config/skills`.
+5. **Consent**, then any `!` items are **moved** to `~/.dotfiles_backup_<timestamp>/` (never deleted), `stow --restow common` links the package, and each skill is linked into `~/.claude/skills` and `~/.gemini/config/skills` (see [AI Agent Skills](#-ai-agent-skills-antigravity--claude-code)). An older whole-folder `skills` symlink is marked `!` and backed up like any other conflict.
 6. **Agent status lines.** With consent, sets only the `statusLine` key in `~/.claude/settings.json` and `~/.gemini/antigravity-cli/settings.json` (backed up first).
 
 ```bash
@@ -85,12 +85,17 @@ One row per dependency: `id | tier | check | brew | apt | fallback | required_by
 
 ## 🧠 AI Agent Skills (Antigravity & Claude Code)
 
-All skills reside in `agent-skills/<skill-name>/SKILL.md`.
+Skills in this repo reside in `agent-skills/<skill-name>/SKILL.md`.
 
-* **Claude Code** looks up: `~/.claude/skills` $\rightarrow$ `agent-skills/`
-* **Antigravity / Gemini CLI** looks up: `~/.gemini/config/skills` $\rightarrow$ `agent-skills/`
+* **Claude Code** looks up: `~/.claude/skills/<skill-name>` $\rightarrow$ the skill's folder
+* **Antigravity / Gemini CLI** looks up: `~/.gemini/config/skills/<skill-name>` $\rightarrow$ the skill's folder
 
-**Benefit**: Any skill created, edited, or updated by either agent or yourself is instantly shared across all tools and tracked in Git.
+Both `skills` folders are real directories holding one symlink per skill. `install.sh` links every folder that has a `SKILL.md`, from two places:
+
+1. `agent-skills/` in this repo.
+2. kno-hub's `kits/`, only on a machine where kno-hub is cloned (default `~/projects/kno-hub/kits`; set `KNO_HUB_KITS_DIR` to change it). A machine without kno-hub skips this silently. If a name exists in both places, `agent-skills/` wins and the installer warns.
+
+**Benefit**: Editing a skill's files is instantly shared across all tools and tracked in Git, because the links point at the repo. **Adding or removing a skill folder needs `./install.sh` to be re-run**; a link whose skill was removed is reported as dangling and left for you to delete. Claude Code keeps its own `synced/` cache inside `~/.claude/skills`, which is outside this repo.
 
 ---
 
