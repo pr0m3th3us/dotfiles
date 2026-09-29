@@ -12,7 +12,11 @@
     "indigo": "#6366f1",
     "darkblue": "#1e3a8a",
     "darktext": "#111827",
-    "whitetext": "#ffffff"
+    "whitetext": "#ffffff",
+    "slate": "#1e293b",
+    "git_green": "#16a34a",
+    "warn_yellow": "#eab308",
+    "alert_red": "#ef4444"
   },
   "blocks": [
     {
@@ -27,8 +31,9 @@
         },
         {
           "type": "os",
-          "style": "powerline",
-          "powerline_symbol": "\ue0b0",
+          "style": "diamond",
+          "leading_diamond": "\ue0b6",
+          "trailing_diamond": "\ue0b0",
           "foreground": "p:darktext",
           "background": "p:teal",
           "options": {
@@ -44,8 +49,8 @@
         },
         {
           "type": "path",
-          "style": "powerline",
-          "powerline_symbol": "\ue0b0",
+          "style": "diamond",
+          "trailing_diamond": "\ue0b0",
           "foreground": "p:whitetext",
           "background": "p:blue",
           "options": {
@@ -56,20 +61,20 @@
         },
         {
           "type": "git",
-          "style": "powerline",
-          "powerline_symbol": "\ue0b0",
-          "foreground": "p:darktext",
-          "background": "p:green",
+          "style": "diamond",
+          "trailing_diamond": "\ue0b0",
+          "foreground": "p:slate",
+          "background": "p:git_green",
           "background_templates": [
-            "{{ if or (.Working.Changed) (.Staging.Changed) }}#eab308{{ end }}",
-            "{{ if and (gt .Ahead 0) (gt .Behind 0) }}#ef4444{{ end }}"
+            "{{ if or .Working.Changed .Staging.Changed }}p:warn_yellow{{ end }}",
+            "{{ if and (gt .Ahead 0) (gt .Behind 0) }}p:alert_red{{ end }}"
           ],
           "template": " \uf418 {{ .HEAD }}{{ if .BranchStatus }} {{ .BranchStatus }}{{ else }} ={{ end }}{{ if .Working.Changed }} \uf046 {{ .Working.String }}{{ end }}{{ if .Staging.Changed }} \uf046 {{ .Staging.String }}{{ end }} "
         },
         {
           "type": "executiontime",
-          "style": "powerline",
-          "powerline_symbol": "\ue0b0",
+          "style": "diamond",
+          "trailing_diamond": "\ue0b4",
           "foreground": "p:whitetext",
           "background": "p:charcoal",
           "options": {
