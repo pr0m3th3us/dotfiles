@@ -28,6 +28,12 @@ STOW_CONTAINERS=".config .local .local/share .local/bin"
 SKILL_ROOTS=".claude/skills .gemini/config/skills"
 KNO_HUB_KITS_DIR="${KNO_HUB_KITS_DIR:-$HOME/projects/kno-hub/kits}"
 
+# kno-hub's doc tools (doc-lint, doc-reword, doc-approve) are launchers in its bin/.
+# Each executable there is linked into ~/.local/bin (a name starting with _ is a
+# helper, not a tool); a machine without kno-hub simply skips it.
+KNO_HUB_BIN_DIR="${KNO_HUB_BIN_DIR:-$HOME/projects/kno-hub/bin}"
+TOOL_DIR=".local/bin"
+
 MODE="install"
 ASSUME_YES=0
 
@@ -397,7 +403,7 @@ install_deps() {
 
 # --- Link planning ------------------------------------------------------------
 L_REL=() L_SRC=() L_STATE=() # state: linked | new | conflict
-L_KIND=()                      # stow | skill
+L_KIND=()                      # stow | skill | tool
 CREATE_DIRS=""
 
 is_container() {
@@ -558,7 +564,7 @@ apply_links() {
 
   stow -d "$DOTFILES_DIR" -t "$HOME" --restow "$PACKAGE" || die "stow failed (backups are in $BACKUP_DIR)"
   for i in "${!L_REL[@]}"; do
-    [ "${L_KIND[$i]}" = "skill" ] && ln -sfn "${L_SRC[$i]}" "$HOME/${L_REL[$i]}"
+    case "${L_KIND[$i]}" in skill | tool) ln -sfn "${L_SRC[$i]}" "$HOME/${L_REL[$i]}" ;; esac
   done
 }
 
@@ -599,6 +605,7 @@ collect_skill_items() {
   done
   link_skill_dirs "$DOTFILES_DIR"/agent-skills/*/
   [ -d "$KNO_HUB_KITS_DIR" ] && link_skill_dirs "$KNO_HUB_KITS_DIR"/*/
+  [ -d "$KNO_HUB_BIN_DIR" ] && link_tool_files "$KNO_HUB_BIN_DIR"/*
   # A skill removed or renamed at its source leaves its link behind. Report only.
   for root in $SKILL_ROOTS; do
     for link in "$HOME/$root"/*; do
@@ -606,6 +613,21 @@ collect_skill_items() {
     done
   done
   return 0
+}
+
+# Link each executable in kno-hub's bin/ into ~/.local/bin, so the doc tools run
+# from any repo. Fail soft like the kits: no bin/ on this machine means nothing to
+# do. An existing file of the same name that is not ours is a conflict and gets
+# backed up like any other, never deleted.
+link_tool_files() {
+  local file name
+  for file in "$@"; do
+    [ -f "$file" ] && [ -x "$file" ] || continue
+    name="$(basename "$file")"
+    case "$name" in _*) continue ;; esac
+    planned_link "$TOOL_DIR/$name" && continue
+    add_link "$TOOL_DIR/$name" "$file" tool
+  done
 }
 
 # --- Agent statusLine wiring ----------------------------------------------------
