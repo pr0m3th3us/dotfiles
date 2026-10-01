@@ -28,9 +28,9 @@ STOW_CONTAINERS=".config .local .local/share .local/bin"
 SKILL_ROOTS=".claude/skills .gemini/config/skills"
 KNO_HUB_KITS_DIR="${KNO_HUB_KITS_DIR:-$HOME/projects/kno-hub/kits}"
 
-# kno-hub's doc tools (doc-lint, doc-reword, doc-approve) are launchers in its bin/.
+# kno-hub's commands (sdoc, pin) are launchers in its bin/.
 # Each executable there is linked into ~/.local/bin (a name starting with _ is a
-# helper, not a tool); a machine without kno-hub simply skips it.
+# helper, not a command); a machine without kno-hub simply skips it.
 KNO_HUB_BIN_DIR="${KNO_HUB_BIN_DIR:-$HOME/projects/kno-hub/bin}"
 TOOL_DIR=".local/bin"
 

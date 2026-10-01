@@ -97,9 +97,9 @@ Both `skills` folders are real directories holding one symlink per skill. `insta
 
 **Benefit**: Editing a skill's files is instantly shared across all tools and tracked in Git, because the links point at the repo. **Adding or removing a skill folder needs `./install.sh` to be re-run**; a link whose skill was removed is reported as dangling and left for you to delete. Claude Code keeps its own `synced/` cache inside `~/.claude/skills`, which is outside this repo.
 
-### kno-hub doc tools in `~/.local/bin`
+### kno-hub commands in `~/.local/bin`
 
-`install.sh` also links kno-hub's command-line doc tools (`doc-lint`, `doc-reword`, `doc-approve`) into `~/.local/bin`, so they run from any repo. Each is an executable in kno-hub's `bin/` (default `~/projects/kno-hub/bin`; set `KNO_HUB_BIN_DIR` to change it); a name starting with `_` is a helper and is not linked. Like the kits, this only happens on a machine where kno-hub is cloned and is skipped silently elsewhere. An existing file of the same name is marked `!` and moved to the backup folder, never deleted. The tools need Node 22 or newer (`node` in `deps.list`, optional). Adding a tool to kno-hub's `bin/` needs `./install.sh` to be re-run.
+`install.sh` also links kno-hub's commands, `sdoc` (the doc command: check, lint, reword, approve, upgrade and more) and `pin` (the ideaboard helper), into `~/.local/bin`, so they run from any repo. The earlier `doc-lint`, `doc-reword` and `doc-approve` commands no longer exist; delete any links to them left in `~/.local/bin` from an earlier run. Each is an executable in kno-hub's `bin/` (default `~/projects/kno-hub/bin`; set `KNO_HUB_BIN_DIR` to change it); a name starting with `_` is a helper and is not linked. Like the kits, this only happens on a machine where kno-hub is cloned and is skipped silently elsewhere. An existing file of the same name is marked `!` and moved to the backup folder, never deleted. The commands need Node 22 or newer (`node` in `deps.list`, optional). Adding a command to kno-hub's `bin/` needs `./install.sh` to be re-run.
 
 ---
 
