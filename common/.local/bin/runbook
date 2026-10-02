@@ -1,0 +1,12 @@
+#!/bin/sh
+# runbook: the runbook skill's helper (agent-skills/runbook/scripts/runbook.mjs) as a command, runnable
+# from any git repo: `runbook list` draws the board of the repo's runbooks. It follows symlinks, so the
+# copy stow links into ~/.local/bin still finds this repo.
+src=$0
+while [ -L "$src" ]; do
+  dir=$(cd "$(dirname "$src")" && pwd)
+  src=$(readlink "$src")
+  case $src in /*) ;; *) src=$dir/$src ;; esac
+done
+here=$(cd "$(dirname "$src")" && pwd)
+exec node "$here/../../../agent-skills/runbook/scripts/runbook.mjs" "$@"

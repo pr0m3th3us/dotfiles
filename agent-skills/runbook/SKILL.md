@@ -1,6 +1,6 @@
 ---
 name: runbook
-description: "Turns a multi-step goal into an executable runbook: a phased, priority-coded HTML checklist with time/cost budgets, verification gates, dependencies, and a gotchas appendix. Use whenever someone is setting up, installing, configuring, migrating, provisioning, onboarding, or standing up anything multi-step (dev environment, toolchain, pipeline, home lab, service, account/access setup), or asks for a plan, checklist, step-by-step, or walkthrough — including \"help me get X working\", \"move from A to B\", \"where do I start with X\". Triggers even on a single question if answering means hours/days of sequential work. Skip for one-off commands, pure explanation, or anything Claude can just do directly."
+description: "Turns a multi-step goal into an executable runbook: a phased, priority-coded HTML checklist with time/cost budgets, verification gates, dependencies, and a gotchas appendix. Use whenever someone is setting up, installing, configuring, migrating, provisioning, onboarding, or standing up anything multi-step (dev environment, toolchain, pipeline, home lab, service, account/access setup), or asks for a plan, checklist, step-by-step, or walkthrough — including \"help me get X working\", \"move from A to B\", \"where do I start with X\". Triggers even on a single question if answering means hours/days of sequential work. Skip for one-off commands, pure explanation, or anything Claude can just do directly. Also use for /runbook list (a board of the repo's runbooks by progress), /runbook next, start, tick, or when someone asks which runbooks are active, how far one has got, or what to do next in one."
 ---
 
 # Runbook
@@ -276,6 +276,27 @@ just the checklist. For a long runbook, mirror the step text as markdown in the
 project too: it lets a fresh chat answer "I'm stuck on p3.1" by retrieving one
 step instead of loading the whole plan.
 
+## Tracking runbooks in a repo: `runbook list`
+
+In a git repo, a runbook's ticks are recorded in `<name>-progress.json` beside its
+`<name>-rb-data.json`, in the `rb-state` shape, and committed. A runbook is **in
+flight** once that file exists. `scripts/runbook.mjs` reads every runbook in the
+repo (and, in a stratadoc repo, every folder under the runbooks layer, checklist
+or not) and is on the PATH as `runbook`:
+
+| Command | Does |
+|---|---|
+| `runbook list` | A board, drawn like `pin list`: columns IN FLIGHT, NOT STARTED, REFERENCE (a doc with no checklist), DONE; `--all` adds RETIRED. Each card shows progress and the current phase, `?` the ready steps of others and `>` your next ready step (whose is "yours": `--me`, `$RUNBOOK_ME`, else the first word of `git config user.name`, matched against the step's `where`). `STALE` means no ticks saved in three days. `--table` and `--json` for scripts. |
+| `runbook next <name> [--mine]` | Every ready step (unticked, dependencies met): id, who, title, what to do. |
+| `runbook start <name>` | Creates the progress file, moving the runbook to IN FLIGHT. |
+| `runbook tick <name> <id>...` / `untick` | Records ticks and rebuilds `<name>.html` from them, so the file, the page and the board agree. |
+
+`/runbook list` means the same: run it and show the board as printed, inside a
+code block, without reflowing it. Record a step only when the person said it is
+done, or with the evidence the step's own gate asks for. Ticks made in a browser
+reach the repo only when the person exports them over the progress file or tells
+you which steps are done.
+
 ## Reference files
 
 - `references/runbook-spec.md` — the data contract, and the single source of
@@ -287,6 +308,7 @@ step instead of loading the whole plan.
 - `assets/rb-state.sample.json` — the state shape: `{"done":{...},"updatedAt":n}`.
 - `assets/runbook-template.html` — the presentation scaffold. Reusable, content
   free, and not to be forked per runbook.
+- `scripts/runbook.mjs` — the board and tick helper above (`runbook` on the PATH).
 - `scripts/build_runbook.py` — validates data, injects data + state into the
   scaffold, and optionally exports print/booklet PDFs (`--pdf`, `--booklet`).
 - `scripts/verify_runbook.py` — opens a built runbook in headless Chromium and

@@ -47,6 +47,6 @@ claude       | optional | cmd:claude      | - | - | sh:curl -fsSL -o /tmp/claude
 antigravity  | optional | cmd:agy,antigravity | cask:antigravity-cli | - | manual:Install the Antigravity CLI from Google's Antigravity docs, then re-run install.sh | common/.config/oh-my-posh/agy-omp.json, common/.zsh/40-aliases.zsh (agy)
 
 # --- Agent skills -------------------------------------------------------------
-python3      | optional | cmd:python3     | brew:python | apt:python3 | - | agent-skills/runbook/scripts/
+python3      | optional | cmd:python3     | brew:python | apt:python3 | - | agent-skills/runbook/scripts/ (build_runbook.py; runbook.mjs tick rebuilds through it)
 playwright   | optional | py:playwright   | - | - | manual:pip install playwright && python3 -m playwright install chromium (use a venv or pipx on PEP 668 systems) | agent-skills/runbook/scripts/verify_runbook.py, build_runbook.py --pdf
-node         | optional | cmd:node        | brew:node | - | manual:Install Node 22 or newer (for example with mise or from nodejs.org); kno-hub's doc tools need it | install.sh (kno-hub doc tools linked into ~/.local/bin)
+node         | optional | cmd:node        | brew:node | - | manual:Install Node 22 or newer (for example with mise or from nodejs.org); kno-hub's doc tools need it | install.sh (kno-hub doc tools linked into ~/.local/bin), agent-skills/runbook/scripts/runbook.mjs, common/.local/bin/runbook
