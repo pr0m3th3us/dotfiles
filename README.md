@@ -14,8 +14,10 @@ A modular, cross-platform dotfile repository using **GNU Stow** for configuratio
 ├── README.md                   # Documentation
 ├── agent-skills/               # Canonical source for AI Agent Skills
 │   └── runbook/
-│       └── SKILL.md
+│       ├── SKILL.md
+│       └── scripts/            # build/verify a checklist; runbook.mjs draws the board
 └── common/                     # Stowed package linked directly to $HOME
+    ├── .local/bin/runbook      # `runbook list`: board of a repo's runbooks (runs runbook.mjs)
     ├── .config/
     │   └── oh-my-posh/         # OMP themes (system/claude/agy) + claude-statusline.sh
     ├── .zshrc                  # Modular Zsh entrypoint
