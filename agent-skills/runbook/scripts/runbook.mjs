@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// runbook 0.1.0 · source: dotfiles/agent-skills/runbook
+// runbook 0.2.0 · source: dotfiles/agent-skills/runbook
 // Helper for the runbook skill: a board of a repo's runbooks, their ready steps, and recording ticks.
 // Plain Node 22+, no dependencies. The board draws like `pin list` (kno-hub/kits/pin/scripts/pin.mjs).
 //
@@ -8,12 +8,12 @@
 // the data (the rb-state shape: {"done": {"p0.1": true}, "updatedAt": <ms>}); a runbook is in flight
 // once that file exists.
 
-import { readFileSync, writeFileSync, existsSync, readdirSync, realpathSync } from 'node:fs'
+import { readFileSync, writeFileSync, renameSync, existsSync, readdirSync, realpathSync, openSync, closeSync, unlinkSync, statSync } from 'node:fs'
 import { join, dirname, resolve, relative } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
-export const VERSION = '0.1.0'
+export const VERSION = '0.2.0'
 export const STALE_DAYS = 3
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SKIP_DIRS = new Set(['node_modules', '_archive', 'dist', 'build'])
@@ -106,6 +106,9 @@ function summarize({ data, progress, status }) {
 }
 
 const mine = (step, who) => Boolean(who) && new RegExp(`\\b${who}\\b`, 'i').test(step.where || '')
+
+/** Who may run a step: 'agent', 'human', or null when the step is not an action (nothing to run). */
+export const executorOf = (s) => ((s.kind || 'action') !== 'action' ? null : s.executor === 'agent' ? 'agent' : 'human')
 
 // ---------------------------------------------------------------------------
 // The board: one column per state, one short card per runbook, in the same
@@ -222,17 +225,112 @@ export function listRunbooks(rbs, { all = false, columns = null, who } = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// Dispatch: what a main agent can hand to step-runner subagents, and where it must stop.
+// Steps in a phase are sequential, so a run is the unbroken stretch of agent steps from the
+// phase's first unticked step; the first human step (or an unmet dependency) ends it.
+// ---------------------------------------------------------------------------
+/** One entry per phase that can be worked now: the run to dispatch, and what stops it. */
+export function plan(rb, { phase } = {}) {
+  const done = rb.progress?.done || {}
+  const phases = rb.data.phases
+  const finished = (p) => p.steps.every((s) => done[s.id])
+  const byId = new Map(phases.map((p) => [p.id, p]))
+  const out = []
+  phases.forEach((p, i) => {
+    if (phase && p.id !== phase && p.num !== phase) return
+    if (finished(p)) return
+    const deps = p.dependsOn || []
+    const waiting = deps.filter((id) => !byId.has(id) || !finished(byId.get(id)))
+    // An explicit dependsOn is the author's ordering; with none, a phase follows the one before unless it is parallel.
+    if (!waiting.length && !deps.length && !p.parallel && i > 0 && !finished(phases[i - 1])) waiting.push(phases[i - 1].id)
+    const entry = { id: p.id, num: p.num, title: plain(p.titleText || p.title), waitingOn: waiting, steps: [], acks: [], order: [], gate: false, minutes: 0, stop: null }
+    if (!waiting.length) {
+      for (const s of p.steps) {
+        if (done[s.id]) continue
+        const unmet = (s.dependsOn || []).filter((id) => !done[id])
+        const kind = s.kind || 'action'
+        if (unmet.length) { entry.stop = { id: s.id, who: 'blocked', reason: `needs ${unmet.join(' ')}`, title: plain(s.title) }; break }
+        if (kind === 'info' || kind === 'done') { entry.acks.push(s.id); entry.order.push(s.id); continue }
+        if (executorOf(s) === 'agent') { entry.steps.push(s.id); entry.order.push(s.id); entry.minutes += s.minutes || 0; continue }
+        const reason = kind === 'action' ? (s.executor === 'human' ? s.humanReason || 'human' : 'unclassified') : kind
+        entry.stop = { id: s.id, who: 'human', reason, title: plain(s.title), do: plain(s.do), where: s.where || '' }
+        break
+      }
+      if (!entry.stop && p.verification) {
+        if (p.verification.executor === 'agent') entry.gate = true
+        else entry.stop = { id: `${p.id} gate`, who: 'human', reason: 'gate', title: plain(p.verification.title) }
+      }
+    }
+    out.push(entry)
+  })
+  return out
+}
+
+/** A step written out in full, for the runner that will do it; the main agent never needs this. */
+export function brief(rb, ids, { gate } = {}) {
+  const done = rb.progress?.done || {}
+  const parts = []
+  const code = (c) => `${c.caption ? `# ${c.caption}\n` : ''}${c.code}`
+  for (const id of ids) {
+    const s = rb.steps.find((x) => x.id === id)
+    if (!s) throw new Error(`${rb.name} has no step ${id}`)
+    const L = [`## ${s.id} ${plain(s.title)}`, `kind: ${s.kind || 'action'} · executor: ${executorOf(s) || 'n/a'} · where: ${s.where || '-'} · ~${s.minutes || '?'} min${done[s.id] ? ' · ALREADY TICKED' : ''}`]
+    const unmet = (s.dependsOn || []).filter((d) => !done[d])
+    if (unmet.length) L.push(`NOT READY: needs ${unmet.join(' ')}`)
+    L.push(`DO: ${plain(s.do)}`)
+    if (s.why) L.push(`WHY: ${plain(s.why)}`)
+    for (const c of s.commands || []) L.push(`COMMAND:\n${code(c)}`)
+    for (const n of s.notes || []) L.push(`NOTE: ${plain(n)}`)
+    for (const c of s.callouts || []) L.push(`${String(c.kind || 'info').toUpperCase()}: ${c.title ? `${plain(c.title)}. ` : ''}${(c.body || []).map(plain).join(' ')}`)
+    if (s.table) L.push(`TABLE: ${[s.table.head, ...(s.table.rows || [])].map((r) => r.map(plain).join(' | ')).join('\n       ')}`)
+    if (s.verify) L.push(`VERIFY:\n${code(s.verify)}\nEXPECT: ${plain(s.verify.expect)}`)
+    parts.push(L.join('\n'))
+  }
+  if (gate) {
+    const p = rb.data.phases.find((x) => x.id === gate)
+    if (!p?.verification) throw new Error(`${rb.name} phase ${gate} has no verification gate`)
+    const v = p.verification
+    parts.push([`## ${gate} GATE (run after the steps above are ticked; it has no tick of its own)`, `executor: ${v.executor || 'human'}`, `CHECK: ${plain(v.title)}`, v.code ? `VERIFY:\n${v.code}` : '', `EXPECT: ${plain(v.expect)}`].filter(Boolean).join('\n'))
+  }
+  return parts.join('\n\n')
+}
+
+// ---------------------------------------------------------------------------
 // Ticks: written to <name>-progress.json, then the checklist HTML is rebuilt
 // from it, so the file, the page and the board agree.
 // ---------------------------------------------------------------------------
-function writeProgress(rb, done, { build = true } = {}) {
-  const ids = new Set(rb.steps.map((s) => s.id))
-  const sorted = Object.fromEntries(rb.steps.filter((s) => done[s.id]).map((s) => [s.id, true]))
-  for (const k of Object.keys(done)) if (!ids.has(k)) throw new Error(`${rb.name} has no step ${k}`)
-  writeFileSync(`${rb.base}-progress.json`, `${JSON.stringify({ done: sorted, updatedAt: Date.now() }, null, 2)}\n`)
-  if (build) {
-    execFileSync('python3', [join(HERE, 'build_runbook.py'), '--data', `${rb.base}-rb-data.json`, '--state', `${rb.base}-progress.json`, '--out', `${rb.base}.html`], { stdio: 'inherit' })
+/** Run fn holding <name>-progress.lock, so runners ticking in parallel take turns instead of overwriting each other. */
+function withLock(base, fn) {
+  const lock = `${base}-progress.lock`
+  const nap = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+  for (let waited = 0; ; waited += 25) {
+    try { closeSync(openSync(lock, 'wx')); break } catch (e) {
+      if (e.code !== 'EEXIST') throw e
+      // A lock older than 15s belongs to a process that died; take it over.
+      try { if (Date.now() - statSync(lock).mtimeMs > 15000) unlinkSync(lock) } catch { /* released meanwhile */ }
+      if (waited > 20000) throw new Error(`could not lock ${lock}`)
+      nap(25)
+    }
   }
+  try { return fn() } finally { try { unlinkSync(lock) } catch { /* already gone */ } }
+}
+
+function writeProgress(rb, change, { build = true } = {}) {
+  const ids = new Set(rb.steps.map((s) => s.id))
+  withLock(rb.base, () => {
+    // Read the ticks inside the lock, not at startup, so a tick made meanwhile by another runner is kept.
+    const done = change({ ...(readJson(`${rb.base}-progress.json`)?.done || {}) })
+    for (const k of Object.keys(done)) if (!ids.has(k)) throw new Error(`${rb.name} has no step ${k}`)
+    const sorted = Object.fromEntries(rb.steps.filter((s) => done[s.id]).map((s) => [s.id, true]))
+    const tmp = `${rb.base}-progress.json.${process.pid}.tmp`
+    writeFileSync(tmp, `${JSON.stringify({ done: sorted, updatedAt: Date.now() }, null, 2)}\n`)
+    renameSync(tmp, `${rb.base}-progress.json`)
+  })
+  if (build) buildHtml(rb)
+}
+
+function buildHtml(rb) {
+  execFileSync('python3', [join(HERE, 'build_runbook.py'), '--data', `${rb.base}-rb-data.json`, '--state', `${rb.base}-progress.json`, '--out', `${rb.base}.html`], { stdio: 'inherit' })
 }
 
 // ---------------------------------------------------------------------------
@@ -245,7 +343,7 @@ function flags(argv) {
     const a = argv[i]
     if (a.startsWith('--')) {
       const k = a.slice(2)
-      if (['all', 'json', 'table', 'color', 'no-color', 'no-build', 'mine'].includes(k)) opt[k] = true
+      if (['all', 'json', 'table', 'color', 'no-color', 'no-build', 'mine', 'agent', 'human'].includes(k)) opt[k] = true
       else opt[k] = argv[++i]
     } else pos.push(a)
   }
@@ -262,7 +360,11 @@ function main(argv) {
     console.log(`runbook ${VERSION}
   list [--all] [--column "IN FLIGHT,DONE"]         the board: a column per state (in flight, not started, reference, done),
        [--table] [--json] [--color | --no-color]   a card per runbook; RETIRED only with --all. Sized to the terminal like pin list.
-  next <name> [--mine]                             every ready step of a runbook: id, who, title and what to do
+  next <name> [--mine|--agent|--human]             every ready step of a runbook: id, executor, where, title and what to do
+  plan <name> [phase] [--json]                     what to hand to step-runner subagents: per phase, the run of agent steps from
+                                                   its first unticked step, and the human step that stops it
+  brief <name> <step-id>... [--gate <phase>]       a step written out in full (commands, verify, notes) for the runner doing it
+  build <name>                                     rebuild <name>.html from the ticks (after tick --no-build)
   start <name>                                     create <name>-progress.json: the runbook moves to IN FLIGHT
   tick <name> <step-id>... [--no-build]            record steps as done, then rebuild <name>.html from the ticks
   untick <name> <step-id>... [--no-build]          take ticks back
@@ -281,7 +383,7 @@ function main(argv) {
   if (cmd === 'list') {
     const shown = listRunbooks(rbs, { all: opt.all, columns: opt.column ? opt.column.split(',') : null, who })
     if (opt.json) {
-      console.log(JSON.stringify(shown.map((r) => ({ name: r.name, path: r.path, title: r.title, status: r.status, column: r.column, done: r.doneCount, steps: r.steps.length, stale: r.stale, ready: r.ready.map((s) => ({ id: s.id, where: s.where, title: plain(s.title) })) })), null, 2))
+      console.log(JSON.stringify(shown.map((r) => ({ name: r.name, path: r.path, title: r.title, status: r.status, column: r.column, done: r.doneCount, steps: r.steps.length, stale: r.stale, ready: r.ready.map((s) => ({ id: s.id, executor: executorOf(s), where: s.where, title: plain(s.title) })) })), null, 2))
       return 0
     }
     if (opt.table) {
@@ -296,9 +398,44 @@ function main(argv) {
   if (cmd === 'next') {
     const rb = byName(pos[0])
     if (!rb.data) { console.log(`${rb.name} has no checklist.`); return 0 }
-    const steps = rb.ready.filter((s) => !opt.mine || mine(s, who))
+    const steps = rb.ready.filter((s) => (!opt.mine || mine(s, who)) && (!opt.agent || executorOf(s) === 'agent') && (!opt.human || executorOf(s) === 'human'))
     console.log(`${rb.name} · ${rb.doneCount}/${rb.steps.length} done · ${steps.length} ready${rb.progress ? '' : ' (not started)'}\n`)
-    for (const s of steps) console.log(`${s.id.padEnd(6)} [${s.where || '?'}] ${plain(s.title)}\n       ${plain(s.do)}\n`)
+    for (const s of steps) console.log(`${s.id.padEnd(6)} [${executorOf(s) || s.kind}|${s.where || '?'}] ${plain(s.title)}\n       ${plain(s.do)}\n`)
+    return 0
+  }
+
+  if (cmd === 'plan') {
+    const rb = byName(pos[0])
+    if (!rb.data) { console.log(`${rb.name} has no checklist.`); return 0 }
+    const phases = plan(rb, { phase: pos[1] })
+    if (opt.json) { console.log(JSON.stringify({ runbook: rb.name, done: rb.doneCount, steps: rb.steps.length, phases }, null, 2)); return 0 }
+    console.log(`${rb.name} · ${rb.doneCount}/${rb.steps.length} done`)
+    if (!phases.length) console.log(pos[1] ? `phase ${pos[1]}: nothing left, or no such phase` : 'nothing left to do')
+    for (const p of phases) {
+      console.log(`\n${p.id} ${p.title}`)
+      if (p.waitingOn.length) { console.log(`  WAIT   needs phase ${p.waitingOn.join(' ')} finished first`); continue }
+      if (p.steps.length) console.log(`  RUN    ${[...p.steps, ...(p.gate ? [`${p.id}-gate`] : [])].join(' ')} · ${p.steps.length} agent step${p.steps.length > 1 ? 's' : ''}, ~${p.minutes} min -> runbook-step-runner: runbook=${rb.name} steps=${p.order.join(',')}${p.gate ? ` gate=${p.id}` : ''}`)
+      else if (p.acks.length) console.log(`  TICK   ${p.acks.join(' ')} · nothing to execute: runbook tick ${rb.name} ${p.acks.join(' ')}`)
+      if (p.steps.length && p.acks.length) console.log(`         (the runner also ticks ${p.acks.join(' ')}: nothing to execute)`)
+      if (p.stop) console.log(`  STOP   ${p.stop.id} · ${p.stop.who}${p.stop.who === 'human' ? ` (${p.stop.reason})` : `: ${p.stop.reason}`}: ${p.stop.title}`)
+    }
+    return 0
+  }
+
+  if (cmd === 'brief') {
+    const [name, ...ids] = pos
+    const rb = byName(name)
+    if (!rb.data) throw new Error(`${rb.name} has no checklist`)
+    if (!ids.length && !opt.gate) { console.error('usage: brief <name> <step-id>... [--gate <phase>]'); return 2 }
+    console.log(brief(rb, ids, { gate: opt.gate }))
+    return 0
+  }
+
+  if (cmd === 'build') {
+    const rb = byName(pos[0])
+    if (!rb.data) throw new Error(`${rb.name} has no checklist to build`)
+    if (!rb.progress) throw new Error(`${rb.name} is not started; try: runbook start ${rb.name}`)
+    buildHtml(rb)
     return 0
   }
 
@@ -308,15 +445,13 @@ function main(argv) {
     if (!rb.data) throw new Error(`${rb.name} has no checklist to tick`)
     if (cmd !== 'start' && !ids.length) { console.error(`usage: ${cmd} <name> <step-id>...`); return 2 }
     if (cmd === 'start' && rb.progress) { console.log(`${rb.name} is already in flight.`); return 0 }
-    const done = { ...(rb.progress?.done || {}) }
-    for (const id of ids) cmd === 'tick' ? (done[id] = true) : delete done[id]
-    writeProgress(rb, done, { build: !opt['no-build'] })
+    writeProgress(rb, (done) => { for (const id of ids) cmd === 'tick' ? (done[id] = true) : delete done[id]; return done }, { build: !opt['no-build'] })
     const after = loadRunbook(rb.base, root)
     console.log(`${rb.name}: ${after.doneCount}/${after.steps.length} done · next ready: ${after.ready.map((s) => s.id).join(' ') || 'none'}`)
     return 0
   }
 
-  console.error(`unknown command "${cmd}"; try: list, next, start, tick, untick`)
+  console.error(`unknown command "${cmd}"; try: list, next, plan, brief, build, start, tick, untick`)
   return 2
 }
 

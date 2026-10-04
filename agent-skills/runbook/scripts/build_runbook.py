@@ -29,6 +29,16 @@ DEFAULT_TEMPLATE = Path(__file__).resolve().parent.parent / "assets" / "runbook-
 VALID_KINDS = {"action", "decide", "info", "done", "blocked"}
 VALID_PRIORITIES = {1, 2, 3}
 VALID_CALLOUT_KINDS = {"warn", "info", "good"}
+VALID_EXECUTORS = {"agent", "human"}
+VALID_HUMAN_REASONS = {"decision", "approval", "credentials", "physical", "no-access"}
+
+# Wording that usually means a person has to act. Only ever a warning: it flags an
+# `executor: agent` step whose text may hide a human gate.
+HUMAN_ACT = re.compile(
+    r"\b(log ?in|sign ?in|sign-in|phone call|call (?:the|them|him|her|staff)|visit|in person|"
+    r"approve|approval|pay(?:ment)?|otp|captcha|2fa|two-factor|scan the|ask (?:the|pramit|staff))\b",
+    re.I,
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -82,6 +92,13 @@ def validate(data: dict, state: dict) -> tuple[list[str], list[str]]:
                 "discovered several phases later"
             )
 
+        gate = p.get("verification") or {}
+        gx = gate.get("executor")
+        if gx is not None and gx not in VALID_EXECUTORS:
+            errors.append(f"{where} ({pid}): verification.executor {gx!r} is not one of {sorted(VALID_EXECUTORS)}")
+        elif gx == "agent" and not gate.get("code"):
+            errors.append(f"{where} ({pid}): verification.executor `agent` needs `code` to run")
+
         steps = p.get("steps") or []
         if not steps:
             warnings.append(f"{where} ({pid}): no steps")
@@ -127,6 +144,55 @@ def validate(data: dict, state: dict) -> tuple[list[str], list[str]]:
             cost = s.get("cost")
             if cost is not None and not isinstance(cost.get("amount"), (int, float)):
                 errors.append(f"{sw} ({sid}): cost.amount must be a number")
+
+            ex = s.get("executor")
+            reason = s.get("humanReason")
+            if ex is not None and ex not in VALID_EXECUTORS:
+                errors.append(f"{sw} ({sid}): executor {ex!r} is not one of {sorted(VALID_EXECUTORS)}")
+            elif kind == "action" and ex is None:
+                warnings.append(
+                    f"{sw} ({sid}): no `executor`; the step is treated as human and never "
+                    "handed to a subagent"
+                )
+            if reason is not None and reason not in VALID_HUMAN_REASONS:
+                errors.append(
+                    f"{sw} ({sid}): humanReason {reason!r} is not one of {sorted(VALID_HUMAN_REASONS)}"
+                )
+            if ex == "agent":
+                if kind != "action":
+                    errors.append(f"{sw} ({sid}): executor `agent` only applies to kind `action`, not {kind!r}")
+                if reason:
+                    errors.append(f"{sw} ({sid}): executor `agent` cannot carry a humanReason ({reason!r})")
+                v = s.get("verify") or {}
+                if not (v.get("code") and v.get("expect")):
+                    errors.append(
+                        f"{sw} ({sid}): executor `agent` needs `verify` with both `code` and `expect`, "
+                        "so an unattended run can prove the step worked"
+                    )
+                if "+" in str(s.get("where") or ""):
+                    errors.append(
+                        f"{sw} ({sid}): executor `agent` but `where` is {s['where']!r}, which names more "
+                        "than one party; split it into an agent step and a human step"
+                    )
+                if cost and isinstance(cost.get("amount"), (int, float)) and cost["amount"] > 0:
+                    errors.append(
+                        f"{sw} ({sid}): executor `agent` on a step that costs money; spending needs "
+                        "an `approval`, so make it `human` or move the spend to its own step"
+                    )
+                text = " ".join(
+                    [str(s.get("do") or "")] + [str(c.get("code") or "") for c in s.get("commands") or []]
+                )
+                hit = HUMAN_ACT.search(re.sub(r"<[^>]+>", "", text))
+                if hit:
+                    warnings.append(
+                        f"{sw} ({sid}): executor `agent` but the text says {hit.group(0)!r}; "
+                        "is a human gate hidden in it?"
+                    )
+            elif ex == "human" and kind == "action" and not reason:
+                errors.append(
+                    f"{sw} ({sid}): executor `human` needs a `humanReason` "
+                    f"({', '.join(sorted(VALID_HUMAN_REASONS))})"
+                )
 
             for c in s.get("callouts") or []:
                 if c.get("kind") and c["kind"] not in VALID_CALLOUT_KINDS:

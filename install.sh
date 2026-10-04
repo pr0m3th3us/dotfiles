@@ -26,6 +26,10 @@ STOW_CONTAINERS=".config .local .local/share .local/bin"
 # folder with a SKILL.md under agent-skills/ and the kits dir is linked in as one
 # skill; a machine without the kits dir simply skips it.
 SKILL_ROOTS=".claude/skills .gemini/config/skills"
+
+# Subagents ride with their skill: agent-skills/<skill>/agents/<tool>/<name>.md is linked as
+# a file into that tool's agents folder. The two tools' formats differ, so each has a subfolder.
+AGENT_ROOTS="claude:.claude/agents agy:.gemini/config/agents"
 KNO_HUB_KITS_DIR="${KNO_HUB_KITS_DIR:-$HOME/projects/kno-hub/kits}"
 
 # kno-hub's commands (sdoc, pin) are launchers in its bin/.
@@ -403,7 +407,7 @@ install_deps() {
 
 # --- Link planning ------------------------------------------------------------
 L_REL=() L_SRC=() L_STATE=() # state: linked | new | conflict
-L_KIND=()                      # stow | skill | tool
+L_KIND=()                      # stow | skill | tool (tool also covers agent files)
 CREATE_DIRS=""
 
 is_container() {
@@ -592,6 +596,25 @@ link_skill_dirs() {
   done
 }
 
+# Link each agents/<tool>/*.md of a skill folder into that tool's agents folder. An existing
+# file of the same name that is not ours is a conflict, backed up like any other.
+link_agent_files() {
+  local dir pair tool root file
+  for dir in "$@"; do
+    dir="${dir%/}"
+    for pair in $AGENT_ROOTS; do
+      tool="${pair%%:*}"
+      root="${pair#*:}"
+      for file in "$dir"/agents/"$tool"/*.md; do
+        [ -f "$file" ] || continue
+        [ -d "$HOME/$root" ] || case " $CREATE_DIRS " in *" $root "*) ;; *) CREATE_DIRS="$CREATE_DIRS $root" ;; esac
+        planned_link "$root/$(basename "$file")" && continue
+        add_link "$root/$(basename "$file")" "$file" tool
+      done
+    done
+  done
+}
+
 collect_skill_items() {
   local root link
   # The old installer linked each root to agent-skills/ as a whole. Back that up
@@ -605,6 +628,8 @@ collect_skill_items() {
   done
   link_skill_dirs "$DOTFILES_DIR"/agent-skills/*/
   [ -d "$KNO_HUB_KITS_DIR" ] && link_skill_dirs "$KNO_HUB_KITS_DIR"/*/
+  link_agent_files "$DOTFILES_DIR"/agent-skills/*/
+  [ -d "$KNO_HUB_KITS_DIR" ] && link_agent_files "$KNO_HUB_KITS_DIR"/*/
   [ -d "$KNO_HUB_BIN_DIR" ] && link_tool_files "$KNO_HUB_BIN_DIR"/*
   # A skill removed or renamed at its source leaves its link behind. Report only.
   for root in $SKILL_ROOTS; do

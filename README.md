@@ -15,6 +15,7 @@ A modular, cross-platform dotfile repository using **GNU Stow** for configuratio
 ├── agent-skills/               # Canonical source for AI Agent Skills
 │   └── runbook/
 │       ├── SKILL.md
+│       ├── agents/             # subagents: claude/ and agy/ (one file each, linked as files)
 │       └── scripts/            # build/verify a checklist; runbook.mjs draws the board
 └── common/                     # Stowed package linked directly to $HOME
     ├── .local/bin/runbook      # `runbook list`: board of a repo's runbooks (runs runbook.mjs)
@@ -96,6 +97,8 @@ Both `skills` folders are real directories holding one symlink per skill. `insta
 
 1. `agent-skills/` in this repo.
 2. kno-hub's `kits/`, only on a machine where kno-hub is cloned (default `~/projects/kno-hub/kits`; set `KNO_HUB_KITS_DIR` to change it). A machine without kno-hub skips this silently. If a name exists in both places, `agent-skills/` wins and the installer warns.
+
+A skill may carry subagents too: `agent-skills/<skill>/agents/claude/<name>.md` is linked into `~/.claude/agents/` and `agent-skills/<skill>/agents/agy/<name>.md` into `~/.gemini/config/agents/`, one file link each (the two tools use different frontmatter, hence a folder per tool). The runbook skill's `runbook-step-runner` is the first. Claude Code reads agent files at session start, so start a new session after adding one.
 
 **Benefit**: Editing a skill's files is instantly shared across all tools and tracked in Git, because the links point at the repo. **Adding or removing a skill folder needs `./install.sh` to be re-run**; a link whose skill was removed is reported as dangling and left for you to delete. Claude Code keeps its own `synced/` cache inside `~/.claude/skills`, which is outside this repo.
 

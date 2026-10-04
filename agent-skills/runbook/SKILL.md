@@ -145,8 +145,9 @@ is there tells you which fields are worth filling in:
   readers depend on most: it answers "am I supposed to act here?" without
   expanding anything. The spec's *Kind and do* section is the contract.
 - **Badges**: the `[pX.Y]` id in mono, priority as a word (Mandatory /
-  Recommended / Optional, never a bare number), the kind, the environment
-  (`where`), the time estimate, and cost where a step incurs one.
+  Recommended / Optional, never a bare number), the kind, who may run it
+  (`Agent`, or `Human · <reason>`), the environment (`where`), the time
+  estimate, and cost where a step incurs one.
 - **Dependency chips that recompute on every tick**: `needs p1.4` while that step
   is unticked, `after p1.4` once it is.
 - **Verification gates**, per step and per phase, with command and pass condition.
@@ -182,6 +183,20 @@ Set `theme.accent` in the data to a hue that suits the subject — the default
 slate-blue is deliberately neutral, and a runbook for a different domain should
 not look identical to the last one. Keep it a single accent; the priority and
 status colours are already spoken for.
+
+### Who runs each step
+
+Every `action` step declares `executor`: `agent` if an agent can do it and prove
+it worked with no human in the loop, `human` (with a `humanReason`) if not. The
+spec's *Executor* section is the rule, and `build_runbook.py` enforces the
+checkable half of it: an `agent` step must carry a `verify` with `code` and
+`expect`, cost nothing, and name no person in `where`. Decide it per step while
+you write it, not afterwards, because the answer changes how the step is
+written. A step that needs a person partway through is two steps. A step with
+no way to check the result by command gets one, or becomes `human`.
+
+When unsure, choose `human`. A wrongly delegated step runs unattended; a wrongly
+held one costs a person a minute.
 
 ### Sizing
 
@@ -221,6 +236,52 @@ conversation.
 Let them decide the mode. Some people want the doc and quiet; some want a hand
 on every step; most want tandem for the risky phases and solo for the rest.
 Suggest tandem for phases where a wrong answer is expensive to undo.
+
+## 5b. Run a phase with subagents
+
+When asked to start, run or continue a phase, do not do its steps yourself. The
+steps marked `agent` go to step-runner subagents that work in the background and
+tick their own progress, so the phase costs you a few lines of context instead of
+every command and its output. You decide, dispatch and report. The runner's own
+rules are in `references/step-runner.md`; do not read it, and do not run
+`runbook brief`.
+
+1. **Plan.** `runbook plan <name> [phase]`. Each phase prints a `RUN` line (the
+   agent steps to hand over, with the exact `steps=` string), a `TICK` line
+   (steps with nothing to execute: run the command it prints), and a `STOP` line
+   (the step that ends the run, and why: `human (approval)`, `needs p1.4`,
+   `unclassified`). `WAIT` means an earlier phase is not finished.
+2. **Dispatch.** Start one `runbook-step-runner` subagent per `RUN` line, all at
+   once and in the background, each with only the line's
+   `runbook=<name> steps=... [gate=...]`. In Claude Code that is the Agent tool
+   with `subagent_type: runbook-step-runner`. In agy it is `invoke_subagent`
+   with the subagent of that name. Parallel runs are only ever separate phases
+   (a parallel phase, or phases whose `dependsOn` are met): steps inside a phase
+   are sequential, so one phase is one run. If two phases would change the same
+   file or system, send one and wait.
+3. **Wait.** Say what you started in one line, then stop. Do not poll or read the
+   runners' work.
+4. **Report.** Each runner replies with a short `RESULT` block. Pass it on as it
+   is. When runs have finished, `runbook build <name>` once (the runners tick
+   with `--no-build`), then `runbook plan <name> <phase>` again.
+5. **Stop at the human step.** A `STOP human` line is the answer: tell the person
+   which step, why it is theirs (`humanReason`), and what to do (`plan --json`
+   carries the step's `do`). Do not do it for them and do not skip it. When they
+   say it is done, `runbook tick` it and plan again.
+6. **`BLOCKED` or `FAIL`.** Show the reason and do not redispatch the same run.
+   If the runner hit a gate the author missed, the step is mislabelled: propose
+   `executor: human` with a `humanReason` in the data file, and rebuild. If it
+   failed verification, that is a real failure: fix the runbook (section 6),
+   not just the moment.
+7. **`unclassified`.** A step with no `executor` is never dispatched. Offer to
+   classify the runbook's steps with the spec's rule, and let the person approve
+   them before the data file changes.
+
+Prerequisite: a background subagent cannot ask for permission. Anything the
+harness has not already allowed (a shell command, a file write, an MCP tool)
+surfaces in the main session as an approval prompt, or is denied. Allow the
+commands a phase uses before dispatching, or the runner will stop on its first
+blocked tool.
 
 ## 6. Keep it current as reality intrudes
 
@@ -287,9 +348,12 @@ or not) and is on the PATH as `runbook`:
 | Command | Does |
 |---|---|
 | `runbook list` | A board, drawn like `pin list`: columns IN FLIGHT, NOT STARTED, REFERENCE (a doc with no checklist), DONE; `--all` adds RETIRED. Each card shows progress and the current phase, `?` the ready steps of others and `>` your next ready step (whose is "yours": `--me`, `$RUNBOOK_ME`, else the first word of `git config user.name`, matched against the step's `where`). `STALE` means no ticks saved in three days. `--table` and `--json` for scripts. |
-| `runbook next <name> [--mine]` | Every ready step (unticked, dependencies met): id, who, title, what to do. |
+| `runbook next <name> [--mine\|--agent\|--human]` | Every ready step (unticked, dependencies met): id, `executor` and `where`, title, what to do. |
+| `runbook plan <name> [phase] [--json]` | What can be handed to subagents: per phase, the run of `agent` steps from its first unticked step and the step that stops it. Section 5b. |
+| `runbook brief <name> <id>... [--gate <phase>]` | Steps written out in full, for the runner doing them. Not for the main agent. |
+| `runbook build <name>` | Rebuilds `<name>.html` from the ticks, after `tick --no-build`. |
 | `runbook start <name>` | Creates the progress file, moving the runbook to IN FLIGHT. |
-| `runbook tick <name> <id>...` / `untick` | Records ticks and rebuilds `<name>.html` from them, so the file, the page and the board agree. |
+| `runbook tick <name> <id>...` / `untick` | Records ticks and rebuilds `<name>.html` from them, so the file, the page and the board agree. Ticks take a lock, so runners can tick at the same moment; `--no-build` skips the rebuild. |
 
 `/runbook list` means the same: run it and show the board as printed, inside a
 code block, without reflowing it. Record a step only when the person said it is
@@ -308,6 +372,8 @@ you which steps are done.
 - `assets/rb-state.sample.json` — the state shape: `{"done":{...},"updatedAt":n}`.
 - `assets/runbook-template.html` — the presentation scaffold. Reusable, content
   free, and not to be forked per runbook.
+- `references/step-runner.md` — what a step-runner subagent does and says; the
+  single source for the Claude and agy agent definitions.
 - `scripts/runbook.mjs` — the board and tick helper above (`runbook` on the PATH).
 - `scripts/build_runbook.py` — validates data, injects data + state into the
   scaffold, and optionally exports print/booklet PDFs (`--pdf`, `--booklet`).
