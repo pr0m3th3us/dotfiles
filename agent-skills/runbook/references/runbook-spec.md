@@ -36,6 +36,7 @@ scaffold, not a licence to add markup to a runbook.
 - [Phases](#phases)
 - [Steps](#steps)
 - [Kind and do](#kind-and-do)
+- [Executor](#executor)
 - [Priority levels](#priority-levels)
 - [Dependencies and parallelism](#dependencies-and-parallelism)
 - [Verification](#verification)
@@ -130,6 +131,7 @@ is why cross-phase dependencies are declared per step.
   "id": "p2.1",
   "title": "Write <code class=\"inl\">.wslconfig</code>",
   "kind": "action",
+  "executor": "agent",
   "do": "Create the file below and paste the four settings in. Restart WSL afterwards.",
   "priority": 3,
   "minutes": 5,
@@ -146,7 +148,9 @@ is why cross-phase dependencies are declared per step.
 ```
 
 `id`, `title`, `kind` and `do` are required on every step; the build script
-refuses to build without them. Everything else is optional.
+refuses to build without them. `executor` is required on every `action` step
+(see [Executor](#executor)); the build script warns while a runbook still lacks
+it and fails under `--strict`. Everything else is optional.
 
 Ids are `p<phase>.<n>`, and they are the progress keys — stable ids matter more
 than tidy ones. Use `p3.4b` for something inserted later rather than renumbering.
@@ -198,6 +202,74 @@ or two sentences. Skip it only when the title is self-evidently complete.
 `callouts` take `kind` of `warn` (a trap, a trade-off, a thing that will bite),
 `info` (context that explains a choice), or `good` (a confirmation, a shortcut
 worth knowing).
+
+## Executor
+
+`executor` says who may run an `action` step: `"agent"` or `"human"`. It is what
+lets a main agent hand a phase's mechanical steps to subagents without reading
+them, and stop at the first step that needs a person.
+
+| `executor` | Means | Dispatcher does |
+|---|---|---|
+| `agent` | An agent can do this **and prove it worked** with no human in the loop | Hands it to a step-runner subagent |
+| `human` | A person must act. `humanReason` says why | Stops and reports it |
+| *(missing)* | Not classified yet | Treated as `human`. Never dispatched |
+
+It is a binary on purpose. "Agent only" in the strict sense (a human *could not*
+do it) is almost never true, so the field means **safe to delegate**, and `human`
+means **must not be delegated**. A step that is half each is two steps (one
+action per step), and the validator rejects `executor: agent` on a `where` such
+as `agy + Pramit`.
+
+Only `kind: action` has an executor. `decide` is always a person's; `info`,
+`done` and `blocked` have nothing to run. The validator rejects `executor:
+agent` on any other kind.
+
+### `humanReason`
+
+Required when `executor` is `human` on an `action` step. One of:
+
+| `humanReason` | Use when |
+|---|---|
+| `decision` | The step is a judgement call the owner makes (AGENTS.md "Pramit decides") |
+| `approval` | Spending money, touching production, or anything hard to undo needs a sign-off first |
+| `credentials` | Sign-in, 2FA, captcha or a secret the agent does not hold |
+| `physical` | Done off-screen: a phone call, a visit, centre staff, paper |
+| `no-access` | The agent has no tool, account or network path to the system |
+
+### The rule for `agent`
+
+A step may be `agent` only if all of these hold. The validator checks the ones
+it can, so the label cannot drift from the step:
+
+1. `kind` is `action`. *(checked)*
+2. It carries a `verify` with both `code` and `expect`: a command or tool call
+   whose output decides pass or fail, so an unattended run can prove it
+   finished. *(checked)*
+3. It has no `humanReason`, and its `where` does not name a person alongside an
+   agent (`+`). *(checked)*
+4. `cost.amount` is zero or absent. Spending is an `approval`. *(checked)*
+5. Neither `do` nor `commands` asks for a human act: log in, call, visit,
+   approve, pay, OTP, captcha, 2FA. *(warned; a hidden gate is the likeliest
+   authoring mistake)*
+6. It is safe to rerun, or reverses cleanly, or sits behind an earlier
+   `approval` step. *(not checkable; the author's call)*
+
+So the label is **decided by this rule and checked against it**, not inferred by
+a model at run time. What no validator can know is whether the agent running it
+holds the access (rule 6, and whether the credentials exist on that machine). A
+step-runner that hits a gate the author missed stops and reports `BLOCKED`
+rather than improvising, and the fix is to correct the step to `human`.
+
+### Phase gates
+
+A phase's `verification` may carry `"executor": "agent"` when its `code` is a
+command an agent can run and judge. Absent means `human`. An `agent` gate must
+have `code`.
+
+```json
+"verification": { "title": "…", "code": "node scripts/check.mjs", "expect": "exit 0", "executor": "agent" }
+```
 
 ## Priority levels
 

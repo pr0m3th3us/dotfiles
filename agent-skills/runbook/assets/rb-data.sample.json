@@ -43,6 +43,7 @@
           "id": "p0.1",
           "title": "Check the toolchain versions",
           "kind": "action",
+          "executor": "agent",
           "do": "Run the version check below. If any tool is missing, install it before going further.",
           "priority": 3,
           "minutes": 5,
@@ -118,6 +119,8 @@
           "id": "p1.1",
           "title": "Create the server instance",
           "kind": "action",
+          "executor": "human",
+          "humanReason": "approval",
           "do": "Create a small instance in the region closest to your users, and record its IP address.",
           "priority": 3,
           "minutes": 15,
@@ -142,6 +145,7 @@
           "id": "p1.2",
           "title": "Open only the ports you need",
           "kind": "action",
+          "executor": "agent",
           "do": "Allow 22, 80 and 443. Deny everything else inbound.",
           "priority": 3,
           "minutes": 10,
@@ -197,6 +201,8 @@
           "id": "p2.1",
           "title": "Build and copy the release",
           "kind": "action",
+          "executor": "human",
+          "humanReason": "credentials",
           "do": "Build locally, then copy the output to <code>/srv/app</code> on the server.",
           "priority": 3,
           "minutes": 20,
@@ -215,6 +221,7 @@
           "id": "p2.2",
           "title": "Confirm the site answers over HTTPS",
           "kind": "action",
+          "executor": "agent",
           "do": "Request the homepage over HTTPS and confirm a 200 with a valid certificate.",
           "priority": 3,
           "minutes": 5,
@@ -232,7 +239,8 @@
       "verification": {
         "title": "The deploy is real when a fresh browser can load it.",
         "code": "curl -sS -o /dev/null -w '%{http_code}\\n' https://<your-domain>/",
-        "expect": "200, and the page loads in a private window with no certificate warning."
+        "expect": "200, and the page loads in a private window with no certificate warning.",
+        "executor": "agent"
       }
     }
   ],

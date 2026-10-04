@@ -146,6 +146,7 @@ input[type=search]{min-width:150px;flex:1 1 150px}
 .b-p2{color:var(--p2);background:var(--p2-soft);border-color:var(--p2-line)}
 .b-p1{color:var(--p1);background:var(--p1-soft);border-color:var(--p1-line)}
 .b-env{color:var(--ink-2);background:var(--surface-2);border-color:var(--border)}
+.b-exec-agent{color:var(--accent);background:var(--surface-2);border-color:var(--accent)}
 .b-kind{color:var(--do);background:var(--do-soft);border-color:var(--do-line)}
 .b-info{color:var(--muted);background:var(--surface-2);border-color:var(--border)}
 .b-dep{color:var(--muted);background:transparent;border-color:var(--border);text-transform:none;letter-spacing:0}
@@ -377,6 +378,8 @@ function badges(s){
   out.push('<span class="b b-p'+(s.priority||2)+'">'+PRI[s.priority||2]+"</span>");
   var k = KIND[s.kind] || KIND.action;
   out.push('<span class="b '+k.cls+'">'+k.label+"</span>");
+  if((s.kind||"action")==="action" && s.executor==="agent") out.push('<span class="b b-exec-agent" title="An agent can run and verify this step unattended">Agent</span>');
+  else if((s.kind||"action")==="action" && s.executor==="human") out.push('<span class="b b-env" title="A person must do this'+(s.humanReason?": "+esc(s.humanReason):"")+'">Human'+(s.humanReason?" · "+esc(s.humanReason):"")+"</span>");
   if(s.where)   out.push('<span class="b b-env">'+esc(s.where)+"</span>");
   if(s.minutes) out.push('<span class="b b-time">'+fmtTime(s.minutes)+"</span>");
   if(s.cost && s.cost.amount != null && Number(s.cost.amount) > 0){
