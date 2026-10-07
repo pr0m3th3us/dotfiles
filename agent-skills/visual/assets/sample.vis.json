@@ -1,0 +1,463 @@
+{
+ "schema": "visual/1",
+ "slug": "how-a-visual-is-made",
+ "title": "How a visual is made",
+ "kicker": "The visual skill · one topic, one printable page",
+ "status": "SAMPLE · every block type in use",
+ "lede": "A visual is a short illustrated page that explains one topic to a reader who was not in the conversation. The agent writes the content as data. A fixed template draws it, and a checker prints it to PDF and looks for problems before anyone sees it.",
+ "shows": "The visual skill's pipeline, the data file, the PDF checks and what a run costs",
+ "sources": [
+  "dotfiles: agent-skills/visual/SKILL.md",
+  "dotfiles: agent-skills/visual/references/schema.md",
+  "dotfiles: agent-skills/visual/scripts/visual.py"
+ ],
+ "updated": "2026-10-07",
+ "updated_by": "claude",
+ "theme": {
+  "accent": "#2f4fd8"
+ },
+ "allow_terms": [
+  "JSON",
+  "PDF",
+  "HTML",
+  "README"
+ ],
+ "sections": [
+  {
+   "id": "pipeline",
+   "title": "From a conversation to a page",
+   "takeaway": "The agent plans the page before it writes anything, and checks the PDF before it saves it.",
+   "blocks": [
+    {
+     "type": "flow",
+     "steps": [
+      {
+       "title": "READ",
+       "who": "agent",
+       "text": "Find the topic in the conversation."
+      },
+      {
+       "title": "GATHER",
+       "who": "agent",
+       "text": "Read the documents the topic rests on."
+      },
+      {
+       "title": "PLAN",
+       "who": "agent",
+       "text": "Sections, the point of each, the picture in each.",
+       "mark": "gate"
+      },
+      {
+       "title": "WRITE",
+       "who": "agent",
+       "text": "Fill the data file. No markup."
+      },
+      {
+       "title": "CHECK",
+       "who": "script + agent",
+       "text": "Print to PDF, look, fix. Five tries at most.",
+       "mark": "gate"
+      },
+      {
+       "title": "SAVE",
+       "who": "script",
+       "text": "PDF and data file saved, index updated.",
+       "mark": "done"
+      }
+     ]
+    },
+    {
+     "type": "callout",
+     "kind": "note",
+     "title": "Why the plan is a gate",
+     "text": "A page built on the wrong outline has to be rewritten, not fixed. The plan is short, so it is cheap to correct before the writing starts."
+    }
+   ]
+  },
+  {
+   "id": "parts",
+   "title": "Three files, three jobs",
+   "takeaway": "The agent only ever writes the data file. The template and the script never change for one page.",
+   "blocks": [
+    {
+     "type": "diagram",
+     "title": "How the parts connect",
+     "nodes": [
+      {
+       "id": "data",
+       "label": "slug.vis.json",
+       "sub": "content, written per page",
+       "col": 1,
+       "row": 1,
+       "tone": "accent",
+       "filled": true
+      },
+      {
+       "id": "tpl",
+       "label": "Template",
+       "sub": "fixed, draws any data",
+       "col": 1,
+       "row": 2
+      },
+      {
+       "id": "py",
+       "label": "visual.py",
+       "sub": "joins, prints, checks",
+       "col": 2,
+       "row": 1,
+       "tone": "violet"
+      },
+      {
+       "id": "html",
+       "label": "One HTML file",
+       "sub": "everything inline",
+       "col": 3,
+       "row": 1
+      },
+      {
+       "id": "pdf",
+       "label": "A4 PDF",
+       "sub": "kept when it passes",
+       "col": 3,
+       "row": 2,
+       "tone": "good"
+      },
+      {
+       "id": "idx",
+       "label": "Index row",
+       "sub": "visuals README.md",
+       "col": 2,
+       "row": 2,
+       "tone": "amber"
+      }
+     ],
+     "edges": [
+      {
+       "from": "data",
+       "to": "py"
+      },
+      {
+       "from": "tpl",
+       "to": "py"
+      },
+      {
+       "from": "py",
+       "to": "html",
+       "label": "build"
+      },
+      {
+       "from": "html",
+       "to": "pdf",
+       "label": "print"
+      },
+      {
+       "from": "pdf",
+       "to": "idx",
+       "dashed": true,
+       "label": "publish"
+      }
+     ]
+    },
+    {
+     "type": "cards",
+     "columns": 3,
+     "items": [
+      {
+       "tag": "data",
+       "title": "What the page says",
+       "text": "Sections, takeaways, blocks. Kept in the visual's own folder with the PDF and a README, so the next edit is a data edit.",
+       "tone": "accent"
+      },
+      {
+       "tag": "template",
+       "title": "How it looks",
+       "text": "One design for every visual. A new need is a change to the template, made once.",
+       "tone": "muted"
+      },
+      {
+       "tag": "script",
+       "title": "Whether it works",
+       "text": "Checks the data, prints the PDF, measures margins and gaps, and updates the index.",
+       "tone": "violet"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "blocks",
+   "title": "The building blocks",
+   "takeaway": "Pick the block by the job it does for the reader, not by how it looks.",
+   "blocks": [
+    {
+     "type": "table",
+     "columns": [
+      "Block",
+      "Use it to",
+      "Example"
+     ],
+     "rows": [
+      [
+       "flow",
+       "show steps in order",
+       "how a campaign goes live"
+      ],
+      [
+       "diagram",
+       "show parts and how they connect",
+       "the three files above"
+      ],
+      [
+       "chart",
+       "compare amounts or show change over time",
+       "cost per lead by month"
+      ],
+      [
+       "stats",
+       "lead with two to four key numbers",
+       "pages, checks, tries"
+      ],
+      [
+       "compare",
+       "set options side by side with a pick",
+       "PDF or HTML"
+      ],
+      [
+       "tree",
+       "show what contains what",
+       "the data file's shape"
+      ],
+      [
+       "timeline",
+       "show dated events",
+       "a review cycle"
+      ],
+      [
+       "cards, callout, glossary",
+       "group rules, flag a warning, define terms",
+       "the cards above"
+      ]
+     ]
+    },
+    {
+     "type": "tree",
+     "root": [
+      {
+       "label": "slug.vis.json",
+       "mono": true,
+       "note": "one per visual",
+       "children": [
+        {
+         "label": "title, lede, shows",
+         "note": "what the index row says"
+        },
+        {
+         "label": "sections",
+         "note": "three to seven",
+         "children": [
+          {
+           "label": "takeaway",
+           "note": "the one thing to remember"
+          },
+          {
+           "label": "blocks",
+           "note": "one picture or more, with short text"
+          }
+         ]
+        },
+        {
+         "label": "sources",
+         "note": "the documents it draws on"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "checks",
+   "title": "What the PDF check looks for",
+   "takeaway": "A script catches what can be measured. The agent looks at each changed page for the rest.",
+   "blocks": [
+    {
+     "type": "split",
+     "left": [
+      {
+       "type": "list",
+       "items": [
+        "Text or borders in the margin",
+        "Anything wider than the page",
+        "Labels wider than their box",
+        "Blank pages and big empty gaps",
+        "A heading left alone at the foot of a page"
+       ]
+      }
+     ],
+     "right": [
+      {
+       "type": "list",
+       "items": [
+        "Does each section make sense to a new reader?",
+        "Is every sentence plain and short?",
+        "Is every short form spelled out once?",
+        "Do the pictures match the words?"
+       ]
+      }
+     ]
+    },
+    {
+     "type": "compare",
+     "options": [
+      {
+       "name": "Save the PDF",
+       "pick": true,
+       "pros": [
+        "Prints and shares as is",
+        "Same on every screen"
+       ],
+       "cons": [
+        "Rebuilt for every change"
+       ],
+       "verdict": "When all checks pass within five tries."
+      },
+      {
+       "name": "Save the HTML",
+       "pros": [
+        "Opens in any browser",
+        "Reads well on a phone"
+       ],
+       "cons": [
+        "Print layout depends on the browser"
+       ],
+       "verdict": "When the PDF still fails after five tries, or when asked."
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "cost",
+   "title": "What a run costs",
+   "takeaway": "Most of the cost is reading the source documents and looking at the pages, not writing the data.",
+   "blocks": [
+    {
+     "type": "stats",
+     "example": true,
+     "items": [
+      {
+       "value": "~4k",
+       "label": "skill and schema",
+       "note": "read once per run",
+       "example": true
+      },
+      {
+       "value": "~1.3k",
+       "label": "per page looked at",
+       "note": "an A4 page image",
+       "example": true
+      },
+      {
+       "value": "1–3",
+       "label": "tries usually needed",
+       "note": "five at most",
+       "example": true
+      }
+     ]
+    },
+    {
+     "type": "chart",
+     "chart": "bar",
+     "title": "Tokens per run, by stage (thousands)",
+     "example": true,
+     "labels": [
+      "Read the skill",
+      "Gather documents",
+      "Plan and write data",
+      "PDF checks, 2 tries",
+      "Save and index"
+     ],
+     "series": [
+      {
+       "name": "Typical run",
+       "values": [
+        4,
+        20,
+        5,
+        10,
+        2
+       ]
+      }
+     ],
+     "unit": "k"
+    },
+    {
+     "type": "chart",
+     "chart": "column",
+     "title": "Running total across tries (thousands)",
+     "example": true,
+     "labels": [
+      "Data written",
+      "Try 1",
+      "Try 2",
+      "Try 3",
+      "Try 4",
+      "Try 5"
+     ],
+     "series": [
+      {
+       "name": "Running total",
+       "values": [
+        31,
+        38,
+        42,
+        46,
+        50,
+        54
+       ]
+      }
+     ],
+     "unit": "k"
+    },
+    {
+     "type": "timeline",
+     "items": [
+      {
+       "when": "minute 0",
+       "title": "Topic named",
+       "text": "First line of the reply says what the page is about."
+      },
+      {
+       "when": "minute 2",
+       "title": "Plan shown",
+       "text": "Sections and pictures, as the default."
+      },
+      {
+       "when": "minute 6",
+       "title": "First PDF",
+       "tone": "amber"
+      },
+      {
+       "when": "minute 10",
+       "title": "Saved and indexed",
+       "tone": "good"
+      }
+     ]
+    },
+    {
+     "type": "glossary",
+     "items": [
+      {
+       "term": "Token",
+       "meaning": "A small piece of text the model reads or writes; cost is counted in tokens."
+      },
+      {
+       "term": "Visual",
+       "meaning": "One illustrated page about one topic, saved as a PDF or a single HTML file."
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

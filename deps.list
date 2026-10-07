@@ -48,5 +48,7 @@ antigravity  | optional | cmd:agy,antigravity | cask:antigravity-cli | - | manua
 
 # --- Agent skills -------------------------------------------------------------
 python3      | optional | cmd:python3     | brew:python | apt:python3 | - | agent-skills/runbook/scripts/ (build_runbook.py; runbook.mjs tick rebuilds through it)
-playwright   | optional | py:playwright   | - | - | manual:pip install playwright && python3 -m playwright install chromium (use a venv or pipx on PEP 668 systems) | agent-skills/runbook/scripts/verify_runbook.py, build_runbook.py --pdf
+playwright   | optional | py:playwright   | - | - | manual:pip install playwright && python3 -m playwright install chromium (use a venv or pipx on PEP 668 systems) | agent-skills/runbook/scripts/verify_runbook.py, build_runbook.py --pdf, agent-skills/visual/scripts/visual.py
+pymupdf      | optional | py:pymupdf      | - | - | manual:pip install pymupdf (use a venv or pipx on PEP 668 systems) | agent-skills/visual/scripts/visual.py (PDF checks), agent-skills/runbook/scripts/build_runbook.py --booklet
+dict-words   | optional | file:/usr/share/dict/words | - | apt:wamerican | manual:install a words list at /usr/share/dict/words | agent-skills/visual/scripts/visual.py (spelling hints)
 node         | optional | cmd:node        | brew:node | - | manual:Install Node 22 or newer (for example with mise or from nodejs.org); kno-hub's doc tools need it | install.sh (kno-hub doc tools linked into ~/.local/bin), agent-skills/runbook/scripts/runbook.mjs, common/.local/bin/runbook
