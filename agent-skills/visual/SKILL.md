@@ -126,6 +126,9 @@ failed attempt, stop and save the HTML instead (step 7), and say what still fail
 V publish W/<slug>.vis.json --format pdf     # or --format html (asked for, or the PDF failed)
 ```
 
+Run it from inside the repo the visual belongs to: the visuals folder is found from the current
+directory, not from where the JSON sits.
+
 It copies the output into `<visuals>/<slug>/` (`--dir` sets `<visuals>`), keeps `<slug>.vis.json` there,
 writes the folder's `README.md` from the data, deletes the other format's file (the HTML is transient
 once the PDF passes), and adds or updates the visual's row in `<visuals>/README.md`. In a repo with its own doc checks (for

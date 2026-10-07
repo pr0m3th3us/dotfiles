@@ -557,7 +557,7 @@ def publish(data_path: Path, fmt: str, vdir: str | None, work: str | None) -> in
         return 1
     slug = data["slug"]
     w = work_dir(data, work)
-    out_dir = Path(vdir) if vdir else default_dir(data_path.resolve().parent)
+    out_dir = Path(vdir) if vdir else default_dir(Path.cwd())  # the repo you are in, not where the JSON sits
     out_dir.mkdir(parents=True, exist_ok=True)
     src = w / f"{slug}.{fmt}"
     if fmt == "html":
