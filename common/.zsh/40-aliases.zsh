@@ -1,11 +1,10 @@
 # --- Common Aliases -------------------------------------------
 alias ll='ls -AlFh --color=auto'
-alias al='ls -Alrt'
-alias lt='ls -Alrt'
+alias al='ls -Alhrt --color=auto'
+alias lt='ls -Alhrt --color=auto'
 alias gs='git status -sb'
 alias gfs='git fetch 2>/dev/null; git status -sb'
 alias gl='git log --oneline --graph --decorate -20'
-alias dc='docker compose'
 alias c='code .'
 
 # Command normalization across distributions
