@@ -32,6 +32,12 @@ SKILL_ROOTS=".claude/skills .gemini/config/skills .agents/skills .codex/skills"
 AGENT_ROOTS="claude:.claude/agents agy:.gemini/config/agents"
 KNO_HUB_KITS_DIR="${KNO_HUB_KITS_DIR:-$HOME/projects/kno-hub/kits}"
 
+# Python packages the agent skills import (playwright, pymupdf) are installed into one
+# venv (PEP 668 systems refuse a plain pip install). A .pth file in the user site-packages
+# points system python3 at the venv, so the skill scripts import them with no activation.
+# Rows use pwbrowser:/pip:/pwinstall:.
+VENV_DIR="${AGENT_VENV:-$HOME/.venvs/agent-skills}"
+
 # kno-hub's commands (sdoc, pin) are launchers in its bin/.
 # Each executable there is linked into ~/.local/bin (a name starting with _ is a
 # helper, not a command); a machine without kno-hub simply skips it.
@@ -168,10 +174,10 @@ load_deps() {
 
     [ -n "$id" ] && [ -n "$reqby" ] || die "deps.list:$n: expected 7 '|'-separated fields"
     case "$tier" in required | optional) ;; *) die "deps.list:$n: tier must be required|optional, got '$tier'" ;; esac
-    case "$check" in cmd:?* | file:?* | py:?* | font:?*) ;; *) die "deps.list:$n: bad check '$check'" ;; esac
+    case "$check" in cmd:?* | file:?* | py:?* | font:?* | pwbrowser:?*) ;; *) die "deps.list:$n: bad check '$check'" ;; esac
     case "$brew" in - | brew:?* | cask:?*) ;; *) die "deps.list:$n: bad brew field '$brew'" ;; esac
     case "$apt" in - | apt:?*) ;; *) die "deps.list:$n: bad apt field '$apt'" ;; esac
-    case "$fallback" in - | sh:?* | nerdfont:?* | manual:?*) ;; *) die "deps.list:$n: bad fallback '$fallback'" ;; esac
+    case "$fallback" in - | sh:?* | nerdfont:?* | manual:?* | pip:?* | pwinstall:?*) ;; *) die "deps.list:$n: bad fallback '$fallback'" ;; esac
 
     platform_matches "$id" || continue
     D_ID+=("${id%@*}") D_TIER+=("$tier") D_CHECK+=("$check") D_BREW+=("$brew")
@@ -241,7 +247,31 @@ dep_present() {
       ;;
     py) command -v python3 >/dev/null 2>&1 && python3 -c "import $value" >/dev/null 2>&1 ;;
     font) font_present "$value" ;;
+    pwbrowser)
+      [ -x "$VENV_DIR/bin/python" ] && "$VENV_DIR/bin/python" -c "
+import os, sys
+from playwright.sync_api import sync_playwright
+with sync_playwright() as p:
+    sys.exit(0 if os.path.exists(getattr(p, '$value').executable_path) else 1)" >/dev/null 2>&1
+      ;;
   esac
+}
+
+# Let system python3 import what is in the venv, via a .pth file in the user site-packages.
+link_venv_site() {
+  local venv_site user_site
+  venv_site="$("$VENV_DIR/bin/python" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')" || return 1
+  user_site="$(python3 -c 'import site; print(site.getusersitepackages())')" || return 1
+  mkdir -p "$user_site" && printf '%s\n' "$venv_site" >"$user_site/agent-skills-venv.pth" \
+    || { warn "could not write $user_site/agent-skills-venv.pth"; return 1; }
+}
+
+# Create the agent-skills venv if it is not there yet.
+ensure_venv() {
+  [ -x "$VENV_DIR/bin/python" ] && return 0
+  command -v python3 >/dev/null 2>&1 || { warn "python3 not found; cannot create $VENV_DIR"; return 1; }
+  info "$ python3 -m venv $VENV_DIR"
+  python3 -m venv "$VENV_DIR" || { warn "could not create $VENV_DIR (on Debian/Ubuntu: apt install python3-venv)"; return 1; }
 }
 
 # Which install method applies on this machine: brew:/cask:/apt:/sh:/nerdfont:/manual:/none
@@ -277,6 +307,8 @@ describe_method() {
       esac
       ;;
     manual:*) printf 'manual: %s' "${1#manual:}" ;;
+    pip:*) printf 'pip install %s into %s (venv created if missing), linked into python3' "${1#pip:}" "$VENV_DIR" ;;
+    pwinstall:*) printf '%s/bin/python -m playwright install %s%s' "$VENV_DIR" "$([ "$OS" = mac ] || printf -- '--with-deps ')" "${1#pwinstall:}" ;;
     none) printf 'no install method for this platform' ;;
   esac
 }
@@ -357,7 +389,7 @@ Remove-Item -Recurse -Force \$zip,\$dir"
 }
 
 install_deps() {
-  local indices="$1" i method apt_pkgs="" brew_pkgs="" cask_pkgs="" failed=""
+  local indices="$1" i method apt_pkgs="" brew_pkgs="" cask_pkgs="" failed="" pw_flags=""
 
   for i in $indices; do
     method="$(resolve_method "$i")"
@@ -398,6 +430,23 @@ install_deps() {
       nerdfont:*)
         section "${D_ID[$i]}"
         install_nerd_font "${method#nerdfont:}"
+        ;;
+      pip:*)
+        section "${D_ID[$i]}"
+        ensure_venv && { info "$ $VENV_DIR/bin/pip install ${method#pip:}"; "$VENV_DIR/bin/pip" install "${method#pip:}" && link_venv_site || warn "${D_ID[$i]} install reported an error"; }
+        ;;
+      pwinstall:*)
+        section "${D_ID[$i]}"
+        if [ -x "$VENV_DIR/bin/python" ]; then
+          # Linux/WSL also need Chromium's system libraries; --with-deps fetches them via sudo apt.
+          pw_flags=""
+          [ "$OS" = "mac" ] || pw_flags="--with-deps"
+          info "$ $VENV_DIR/bin/python -m playwright install $pw_flags ${method#pwinstall:}"
+          # shellcheck disable=SC2086
+          "$VENV_DIR/bin/python" -m playwright install $pw_flags "${method#pwinstall:}" || warn "${D_ID[$i]} install reported an error"
+        else
+          warn "${D_ID[$i]} needs playwright in $VENV_DIR first"
+        fi
         ;;
     esac
   done

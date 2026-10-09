@@ -88,6 +88,8 @@ Stow never overwrites silently: a real file or a foreign symlink where it wants 
 
 One row per dependency: `id | tier | check | brew | apt | fallback | required_by`. The header of `deps.list` documents every field. **Whenever you add a config or script that needs a new tool, add its row in the same commit** (see `AGENTS.md`), then confirm with `./install.sh --check`.
 
+**Python packages for the agent skills** (`playwright`, its `chromium` browser, `pymupdf`) are installed by `install.sh` into one venv at `~/.venvs/agent-skills` (set `AGENT_VENV` to move it), using the `pip:` and `pwinstall:` installers in `deps.list`. It also drops a `.pth` file in your user site-packages so plain `python3` can import them; the skill scripts need no changes and nothing needs activating. On Debian/Ubuntu the `python3-venv` row installs the venv module first, and Chromium is installed with `--with-deps` so its system libraries come in through `sudo apt` in the same run. If Homebrew upgrades Python and the packages stop importing, delete `~/.venvs/agent-skills` and re-run `./install.sh`.
+
 ---
 
 ## 🧠 AI Agent Skills (Claude Code, Antigravity & Codex)
