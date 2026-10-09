@@ -120,6 +120,24 @@ Stop as soon as an attempt is clean on all three counts. **Pass** means no MUST 
 items you could not justify, and your own page review and read-through found nothing. After the fifth
 failed attempt, stop and save the HTML instead (step 7), and say what still fails.
 
+### 6b. Independent review: one reviewer, one pass
+
+The script cannot tell whether the page is true, and you wrote the page, so you will miss your own
+mistakes. After step 6 passes (or the fifth attempt fails), and before publishing, hand the page to
+one reviewer subagent on **a different model from yours** (the Agent tool, with `model` set; no
+conversation history). Give it only: the page PNGs in `W/pages/`, `W/<slug>.txt`, the files in
+`sources` (their full paths, if they sit outside this repo) and a one-line topic. Ask for two lists,
+each item with its page or section and a fix, and tell it to rewrite nothing:
+
+- **LAYOUT**: anything wrong in the images (clipped or touching boxes, stranded headings, misaligned
+  labels, a picture that does not match its text).
+- **CLAIMS**: any statement, number or step the sources do not support, anything invented, and
+  anything a cold reader could not follow.
+
+Fix what you agree with and rebuild once (it counts toward the five attempts), then publish. Review
+once only: no second round and no score. In the reply (step 8), say what the reviewer found, and what
+you left unchanged and why. With no subagent tool, skip this step and say so.
+
 ### 7. Publish
 
 ```bash
@@ -139,8 +157,8 @@ link in `shared_link`, and run `V publish` again so the index carries it.
 
 ### 8. Reply
 
-A few lines: the topic, the saved path, pages and attempts used, the defaults you took, anything you
-could not verify or left `TBD`.
+A few lines: the topic, the saved path, pages and attempts used, what the reviewer found, the defaults
+you took, anything you could not verify or left `TBD`.
 
 ## `/visual update <slug>`
 
