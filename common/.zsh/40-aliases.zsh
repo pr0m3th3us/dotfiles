@@ -1,7 +1,9 @@
 # --- Common Aliases -------------------------------------------
 alias ll='ls -AlFh --color=auto'
 alias al='ls -Alhrt --color=auto'
-alias lt='ls -Alhrt --color=auto'
+alias alt='ls -Alrt --color=auto'
+alias lt='ls -lhrt --color=auto'
+
 alias gs='git status -sb'
 alias gfs='git fetch 2>/dev/null; git status -sb'
 alias gl='git log --oneline --graph --decorate -20'
