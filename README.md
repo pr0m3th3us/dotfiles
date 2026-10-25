@@ -12,6 +12,8 @@ A modular, cross-platform dotfile repository using **GNU Stow** for configuratio
 ├── deps.list                   # Single list of every dependency (read by install.sh)
 ├── AGENTS.md                   # Rules for AI agents (CLAUDE.md / GEMINI.md point here)
 ├── README.md                   # Documentation
+├── scripts/
+│   └── codex-config.sh         # Seeds ~/.codex/config.toml (status line, trust, fallback files)
 ├── agent-skills/               # Canonical source for AI Agent Skills
 │   └── runbook/
 │       ├── SKILL.md
@@ -57,8 +59,9 @@ The installer asks before every change and is safe to re-run:
 2. **Consent:** `[a]ll missing / [r]equired only / [N]o`. `N` with required dependencies missing exits with nothing changed.
 3. **Install** via `apt`/`brew`, scripted installers, or the Nerd Font installer (on WSL the font goes onto the Windows host). Everything is re-checked; if a required dependency is still missing it stops before touching `$HOME`.
 4. **Link check (read-only).** Shows each item as ✔ linked, `+` new link, or `!` existing and not ours. Cross-checked with `stow -n` (a dry run). If an existing shell rc (e.g. `~/.zshrc`) is marked `!`, its active settings are printed: nothing in it is carried over, so move what you need into the repo (every machine) or `~/.zshrc.local` (this machine only) first.
-5. **Consent**, then any `!` items are **moved** to `~/.dotfiles_backup_<timestamp>/` (never deleted), `stow --restow common` links the package, and each skill is linked into `~/.claude/skills` and `~/.gemini/config/skills` (see [AI Agent Skills](#-ai-agent-skills-antigravity--claude-code)). An older whole-folder `skills` symlink is marked `!` and backed up like any other conflict.
+5. **Consent**, then any `!` items are **moved** to `~/.dotfiles_backup_<timestamp>/` (never deleted), `stow --restow common` links the package, and each skill is linked into `~/.claude/skills`, `~/.gemini/config/skills`, `~/.agents/skills` and `~/.codex/skills` (see [AI Agent Skills](#-ai-agent-skills-antigravity--claude-code)). An older whole-folder `skills` symlink is marked `!` and backed up like any other conflict.
 6. **Agent status lines.** With consent, sets only the `statusLine` key in `~/.claude/settings.json` and `~/.gemini/antigravity-cli/settings.json` (backed up first).
+7. **Codex CLI config.** With consent, and only if `codex` is installed, `scripts/codex-config.sh` adds the keys that are not set yet to `~/.codex/config.toml`: fallback entry files (`CLAUDE.md`, `GEMINI.md`), reasoning effort, the built-in status line and trust for each repo under `~/projects`. A key that is already set is never changed, so a `/statusline` choice survives. Codex has no status line command hook, so oh-my-posh cannot draw it. `scripts/codex-config.sh --check` shows the plan and changes nothing.
 
 ```bash
 ./install.sh --check   # read-only report; exit 1 if something required is missing
@@ -86,14 +89,15 @@ One row per dependency: `id | tier | check | brew | apt | fallback | required_by
 
 ---
 
-## 🧠 AI Agent Skills (Antigravity & Claude Code)
+## 🧠 AI Agent Skills (Claude Code, Antigravity & Codex)
 
 Skills in this repo reside in `agent-skills/<skill-name>/SKILL.md`.
 
 * **Claude Code** looks up: `~/.claude/skills/<skill-name>` $\rightarrow$ the skill's folder
 * **Antigravity / Gemini CLI** looks up: `~/.gemini/config/skills/<skill-name>` $\rightarrow$ the skill's folder
+* **Codex CLI** looks up: `~/.agents/skills/<skill-name>` and `~/.codex/skills/<skill-name>` $\rightarrow$ the skill's folder (it scans both and lists a skill once)
 
-Both `skills` folders are real directories holding one symlink per skill. `install.sh` links every folder that has a `SKILL.md`, from two places:
+Every `skills` folder is a real directory holding one symlink per skill. `install.sh` links every folder that has a `SKILL.md`, from two places:
 
 1. `agent-skills/` in this repo.
 2. kno-hub's `kits/`, only on a machine where kno-hub is cloned (default `~/projects/kno-hub/kits`; set `KNO_HUB_KITS_DIR` to change it). A machine without kno-hub skips this silently. If a name exists in both places, `agent-skills/` wins and the installer warns.
@@ -101,6 +105,10 @@ Both `skills` folders are real directories holding one symlink per skill. `insta
 A skill may carry subagents too: `agent-skills/<skill>/agents/claude/<name>.md` is linked into `~/.claude/agents/` and `agent-skills/<skill>/agents/agy/<name>.md` into `~/.gemini/config/agents/`, one file link each (the two tools use different frontmatter, hence a folder per tool). The runbook skill's `runbook-step-runner` is the first. Claude Code reads agent files at session start, so start a new session after adding one.
 
 **Benefit**: Editing a skill's files is instantly shared across all tools and tracked in Git, because the links point at the repo. **Adding or removing a skill folder needs `./install.sh` to be re-run**; a link whose skill was removed is reported as dangling and left for you to delete. Claude Code keeps its own `synced/` cache inside `~/.claude/skills`, which is outside this repo.
+
+### Global agent instructions
+
+Pramit's user-level rules live in kno-hub (private), not here: this repo is public. On a machine where kno-hub is cloned, `install.sh` links `kno-hub/agent-config/global-instructions.md` as `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`, for each agent that is installed (set `KNO_HUB_GLOBAL_FILE` to change the source). An existing file of the same name is marked `!` and moved to the backup folder. agy has no user-level instruction file wired in yet.
 
 ### kno-hub commands in `~/.local/bin`
 

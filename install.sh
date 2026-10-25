@@ -25,7 +25,7 @@ STOW_CONTAINERS=".config .local .local/share .local/bin"
 # Where each agent looks for skills, and where private kits may be cloned. Every
 # folder with a SKILL.md under agent-skills/ and the kits dir is linked in as one
 # skill; a machine without the kits dir simply skips it.
-SKILL_ROOTS=".claude/skills .gemini/config/skills"
+SKILL_ROOTS=".claude/skills .gemini/config/skills .agents/skills .codex/skills"
 
 # Subagents ride with their skill: agent-skills/<skill>/agents/<tool>/<name>.md is linked as
 # a file into that tool's agents folder. The two tools' formats differ, so each has a subfolder.
@@ -37,6 +37,16 @@ KNO_HUB_KITS_DIR="${KNO_HUB_KITS_DIR:-$HOME/projects/kno-hub/kits}"
 # helper, not a command); a machine without kno-hub simply skips it.
 KNO_HUB_BIN_DIR="${KNO_HUB_BIN_DIR:-$HOME/projects/kno-hub/bin}"
 TOOL_DIR=".local/bin"
+
+# Pramit's user-level agent instructions live in kno-hub (private; this repo is public).
+# Each agent that has a user-level instruction file gets a link to it: agent:path under
+# $HOME. An agent whose folder is missing is skipped. agy has no such file wired in.
+KNO_HUB_GLOBAL_FILE="${KNO_HUB_GLOBAL_FILE:-$HOME/projects/kno-hub/agent-config/global-instructions.md}"
+GLOBAL_INSTRUCTION_TARGETS="claude:.claude/CLAUDE.md codex:.codex/AGENTS.md"
+
+# Codex CLI keeps its settings in ~/.codex/config.toml, which it rewrites itself, so
+# the defaults are seeded by a script instead of being linked (see the script header).
+CODEX_CONFIG_SCRIPT="$DOTFILES_DIR/scripts/codex-config.sh"
 
 MODE="install"
 ASSUME_YES=0
@@ -631,6 +641,7 @@ collect_skill_items() {
   link_agent_files "$DOTFILES_DIR"/agent-skills/*/
   [ -d "$KNO_HUB_KITS_DIR" ] && link_agent_files "$KNO_HUB_KITS_DIR"/*/
   [ -d "$KNO_HUB_BIN_DIR" ] && link_tool_files "$KNO_HUB_BIN_DIR"/*
+  link_global_instructions
   # A skill removed or renamed at its source leaves its link behind. Report only.
   for root in $SKILL_ROOTS; do
     for link in "$HOME/$root"/*; do
@@ -638,6 +649,21 @@ collect_skill_items() {
     done
   done
   return 0
+}
+
+# Link kno-hub's global instruction file as each installed agent's user-level file. A
+# machine without kno-hub, or an agent that is not installed, is skipped. An existing
+# file of the same name that is not ours is a conflict and gets backed up, never deleted.
+link_global_instructions() {
+  local pair tool rel
+  [ -f "$KNO_HUB_GLOBAL_FILE" ] || return 0
+  for pair in $GLOBAL_INSTRUCTION_TARGETS; do
+    tool="${pair%%:*}"
+    rel="${pair#*:}"
+    command -v "$tool" >/dev/null 2>&1 || [ -d "$HOME/$(dirname "$rel")" ] || continue
+    planned_link "$rel" && continue
+    add_link "$rel" "$KNO_HUB_GLOBAL_FILE" tool
+  done
 }
 
 # Link each executable in kno-hub's bin/ into ~/.local/bin, so the doc tools run
@@ -725,6 +751,43 @@ apply_wiring() {
   done
 }
 
+# --- Codex CLI config -----------------------------------------------------------
+CODEX_STATE="" CODEX_DIFF="" # state: ok | change | skip:<reason>
+
+plan_codex() {
+  local rc
+  CODEX_DIFF=""
+  if [ ! -x "$CODEX_CONFIG_SCRIPT" ]; then
+    CODEX_STATE="skip:$CODEX_CONFIG_SCRIPT is missing"
+  elif ! command -v codex >/dev/null 2>&1; then
+    CODEX_STATE="skip:codex not installed"
+  else
+    CODEX_DIFF="$("$CODEX_CONFIG_SCRIPT" --check)"
+    rc=$?
+    case "$rc" in
+      0) CODEX_STATE="ok" ;;
+      10) CODEX_STATE="change" ;;
+      *) CODEX_STATE="skip:$CODEX_CONFIG_SCRIPT failed" ;;
+    esac
+  fi
+}
+
+codex_report() {
+  section "Codex CLI config"
+  case "$CODEX_STATE" in
+    ok) printf '  %s✔%s ~/.codex/config.toml has the defaults\n' "$C_GREEN" "$C_RESET" ;;
+    change)
+      printf '  %s~%s ~/.codex/config.toml: keys that are not set yet will be added (existing keys are never changed)\n' "$C_BLUE" "$C_RESET"
+      printf '%s\n' "$CODEX_DIFF" | sed 's/^/      /'
+      ;;
+    skip:*) printf '  %s-%s Codex CLI %s(%s)%s\n' "$C_DIM" "$C_RESET" "$C_DIM" "${CODEX_STATE#skip:}" "$C_RESET" ;;
+  esac
+}
+
+apply_codex() {
+  BACKUP_DIR="$BACKUP_DIR" "$CODEX_CONFIG_SCRIPT" --apply >/dev/null && info "  updated ~/.codex/config.toml" || warn "Could not update ~/.codex/config.toml"
+}
+
 # ==============================================================================
 detect_platform
 load_deps
@@ -732,6 +795,8 @@ dependency_preflight
 link_preflight
 plan_wiring
 wiring_report
+plan_codex
+codex_report
 
 if [ "$MODE" = "check" ]; then
   section "Summary (read-only check, nothing was changed)"
@@ -782,6 +847,7 @@ else
   # Re-plan: stow and jq may have just been installed.
   link_preflight
   plan_wiring
+  plan_codex
 fi
 
 # --- 2. Links -------------------------------------------------------------------
@@ -818,6 +884,14 @@ if [ "$CHANGES" -gt 0 ]; then
   case "$REPLY_VALUE" in
     y | Y | yes) apply_wiring ;;
     *) info "Skipped status line wiring." ;;
+  esac
+fi
+if [ "$CODEX_STATE" = "change" ]; then
+  echo
+  ask "Seed the Codex CLI keys above into ~/.codex/config.toml? Only keys that are not set yet are added. [y/N]:" y
+  case "$REPLY_VALUE" in
+    y | Y | yes) apply_codex ;;
+    *) info "Skipped Codex config." ;;
   esac
 fi
 

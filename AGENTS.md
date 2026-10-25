@@ -1,11 +1,12 @@
 # Dotfiles: rules for AI agents
 
-Shared rules for every agent working in this repo (Claude via `CLAUDE.md`, Gemini/Antigravity via `GEMINI.md`). Read this file before changing anything.
+Shared rules for every agent working in this repo (Claude via `CLAUDE.md`, Gemini/Antigravity via `GEMINI.md`, Codex via `AGENTS.md` itself). Read this file before changing anything.
 
 ## What this repo is
 
 - `common/` is a **GNU Stow package**. `install.sh` links its contents into `$HOME`, so `~/.zshrc`, `~/.zsh` and `~/.config/oh-my-posh` are symlinks back into this repo. Editing either path edits the same tracked file; there are no copies.
-- `~/.claude/skills` and `~/.gemini/config/skills` are real directories. `install.sh` fills them with one symlink per skill: every folder with a `SKILL.md` under `agent-skills/`, plus every one under kno-hub's `kits/` when kno-hub is cloned (`$KNO_HUB_KITS_DIR`, default `~/projects/kno-hub/kits`). A new skill is not visible until `./install.sh` is re-run. Claude Code's own `synced/` cache lives in `~/.claude/skills` and is not part of this repo.
+- `~/.claude/skills`, `~/.gemini/config/skills`, `~/.agents/skills` and `~/.codex/skills` (Codex scans both of its two) are real directories. `install.sh` fills them with one symlink per skill: every folder with a `SKILL.md` under `agent-skills/`, plus every one under kno-hub's `kits/` when kno-hub is cloned (`$KNO_HUB_KITS_DIR`, default `~/projects/kno-hub/kits`). A new skill is not visible until `./install.sh` is re-run. Claude Code's own `synced/` cache lives in `~/.claude/skills` and is not part of this repo.
+- `scripts/codex-config.sh` seeds `~/.codex/config.toml` (seed-only: a key already set is never changed). Codex rewrites that file itself, so it is not stowed. User-level agent instructions come from kno-hub (`agent-config/`) and are linked by `install.sh`, never stored here: this repo is public.
 - `deps.list` is the **single list** of binaries, packages and fonts the repo needs. `install.sh` reads it to check, install and report.
 - `install.sh` is the only bootstrap: dependency preflight → consent → install → link preflight → consent → stow → agent statusLine wiring.
 
