@@ -24,8 +24,8 @@
 # --- Bootstrap ----------------------------------------------------------------
 git          | required | cmd:git        | brew:git   | apt:git   | -  | install.sh
 stow         | required | cmd:stow       | brew:stow  | apt:stow  | -  | install.sh, common/.zsh/45-functions.zsh (restow)
-curl         | required | cmd:curl       | brew:curl  | apt:curl  | -  | install.sh (sh: installers)
-jq           | required | cmd:jq         | brew:jq    | apt:jq    | -  | common/.config/oh-my-posh/claude-statusline.sh, install.sh (settings wiring)
+curl         | required | cmd:curl       | brew:curl  | apt:curl  | -  | install.sh (sh: installers), common/.local/bin/chrome-debug
+jq           | required | cmd:jq         | brew:jq    | apt:jq    | -  | common/.config/oh-my-posh/claude-statusline.sh, install.sh (settings wiring), common/.local/bin/chrome-debug (status tab list)
 
 # --- Shell --------------------------------------------------------------------
 zsh          | required | cmd:zsh        | brew:zsh   | apt:zsh   | -  | common/.zshrc, common/.zsh/
@@ -41,6 +41,7 @@ zsh-syntax-highlighting | optional | file:/usr/share/zsh-syntax-highlighting/zsh
 bat                     | optional | cmd:batcat,bat   | brew:bat     | apt:bat      | - | common/.zsh/40-aliases.zsh
 fd                      | optional | cmd:fdfind,fd    | brew:fd      | apt:fd-find  | - | common/.zsh/40-aliases.zsh
 xclip@unix              | optional | cmd:xclip        | -            | apt:xclip    | - | common/.zsh/os/wsl.zsh
+chrome                  | optional | file:/Applications/Google Chrome.app,~/Applications/Google Chrome.app,/Applications/Chromium.app,/mnt/c/Program Files/Google/Chrome/Application/chrome.exe,/mnt/c/Program Files (x86)/Google/Chrome/Application/chrome.exe,/usr/bin/google-chrome,/usr/bin/google-chrome-stable,/usr/bin/chromium,/usr/bin/chromium-browser | cask:google-chrome | - | manual:Install Google Chrome from https://www.google.com/chrome/ | common/.local/bin/chrome-debug
 
 # --- Agents -------------------------------------------------------------------
 claude       | optional | cmd:claude      | - | - | sh:curl -fsSL -o /tmp/claude-install.sh https://claude.ai/install.sh && bash /tmp/claude-install.sh | common/.config/oh-my-posh/claude-omp.json, common/.config/oh-my-posh/claude-statusline.sh

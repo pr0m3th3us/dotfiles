@@ -21,6 +21,7 @@ A modular, cross-platform dotfile repository using **GNU Stow** for configuratio
 │       └── scripts/            # build/verify a checklist; runbook.mjs draws the board
 └── common/                     # Stowed package linked directly to $HOME
     ├── .local/bin/runbook      # `runbook list`: board of a repo's runbooks (runs runbook.mjs)
+    ├── .local/bin/chrome-debug # `chrome-debug` / `cdebug`: start or attach to Chrome with remote debugging (mac, Linux, WSL)
     ├── .config/
     │   └── oh-my-posh/         # OMP themes (system/claude/agy) + claude-statusline.sh
     ├── .zshrc                  # Modular Zsh entrypoint
@@ -109,6 +110,10 @@ A skill may carry subagents too: `agent-skills/<skill>/agents/claude/<name>.md` 
 ### Global agent instructions
 
 Pramit's user-level rules live in kno-hub (private), not here: this repo is public. On a machine where kno-hub is cloned, `install.sh` links `kno-hub/agent-config/global-instructions.md` as `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`, for each agent that is installed (set `KNO_HUB_GLOBAL_FILE` to change the source). An existing file of the same name is marked `!` and moved to the backup folder. agy has no user-level instruction file wired in yet.
+
+### `chrome-debug` (alias `cdebug`)
+
+Starts Chrome with remote debugging on port 9222 and an isolated profile (`~/.chrome-debug-<port>`; sign-ins persist), or attaches to the session already running and opens the given URLs in it. `chrome-debug [-p port] [-d profile] [--headless] [url ...]`, plus `--status` and `--stop` (stops only that exact port). Works on macOS, Linux and WSL (uses Windows Chrome there). Under WSL2 NAT networking Windows Chrome is reachable from Windows only; for WSL-side tools set `networkingMode=mirrored` under `[wsl2]` in `%UserProfile%\.wslconfig` and run `wsl --shutdown`. Chrome is an optional dependency in `deps.list`.
 
 ### kno-hub commands in `~/.local/bin`
 

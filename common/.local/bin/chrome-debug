@@ -1,0 +1,439 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# chrome-debug: Launch or attach to a Google Chrome session in remote debug mode.
+# Compatible with macOS, Linux, and Windows Subsystem for Linux (WSL).
+#
+# Flags used by Chrome:
+#   --remote-debugging-port=<port>   enables DevTools Protocol over HTTP/WebSocket
+#   --user-data-dir=<dir>            isolated profile (required so Chrome doesn't
+#                                    attach to an existing normal instance)
+#   --remote-allow-origins=*         allows CDP / MCP servers across host & WSL
+#   --no-first-run                   skips initial setup wizards
+#   --no-default-browser-check       skips prompt to become default browser
+# ==============================================================================
+
+set -eo pipefail
+
+PORT=9222
+USER_DATA_DIR=""
+CUSTOM_PROFILE=0
+HEADLESS=0
+ACTION="launch"
+TARGET_URLS=()
+
+is_wsl() {
+  [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null
+}
+
+is_mac() {
+  [ "$(uname -s)" = "Darwin" ]
+}
+
+usage() {
+  cat <<EOF
+Usage: chrome-debug [options] [url ...]
+
+Launch Google Chrome with remote debugging enabled on port ${PORT} (or attach
+to an existing session). Works seamlessly across macOS, Linux, and WSL.
+
+Options:
+  -p, --port <port>       Remote debugging port (default: 9222)
+  -d, --profile <dir>     Custom user data profile directory
+  --headless              Run Chrome in headless mode
+  --status                Check if a debug session is currently active
+  --stop                  Stop the debug session on this port
+  -h, --help              Show this help message
+
+Examples:
+  chrome-debug
+  chrome-debug https://ads.google.com
+  chrome-debug -p 9223 https://example.com
+  chrome-debug --status
+  chrome-debug --stop
+EOF
+  exit 0
+}
+
+# --- Parse arguments ----------------------------------------------------------
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -p|--port)
+      [ $# -ge 2 ] && [ -n "$2" ] || { echo "Error: --port requires a port number" >&2; exit 1; }
+      PORT="$2"
+      shift 2
+      ;;
+    -d|--profile|--user-data-dir)
+      [ $# -ge 2 ] && [ -n "$2" ] || { echo "Error: --profile requires a directory path" >&2; exit 1; }
+      USER_DATA_DIR="$2"
+      CUSTOM_PROFILE=1
+      shift 2
+      ;;
+    --headless)
+      HEADLESS=1
+      shift
+      ;;
+    --status|status)
+      ACTION="status"
+      shift
+      ;;
+    --stop|stop|--kill|kill)
+      ACTION="stop"
+      shift
+      ;;
+    -h|--help)
+      usage
+      ;;
+    --)
+      shift
+      TARGET_URLS+=("$@")
+      break
+      ;;
+    -*)
+      echo "Error: unknown option: $1 (see --help)" >&2
+      exit 1
+      ;;
+    *)
+      TARGET_URLS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+# The port ends up in command lines and process matching, so it must be a plain number.
+case "$PORT" in
+  ''|*[!0-9]*) echo "Error: invalid port '${PORT}' (expected 1-65535)" >&2; exit 1 ;;
+esac
+if [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then
+  echo "Error: invalid port '${PORT}' (expected 1-65535)" >&2
+  exit 1
+fi
+PORT=$((10#$PORT))
+
+# --- CDP transport ------------------------------------------------------------
+# cdp <METHOD> <path>  prints the response body.
+# Exit: 0 ok, 7 nothing listening, anything else = a listener that did not answer
+# like DevTools (HTTP error, timeout).
+# On WSL it falls back to powershell.exe, which reaches Windows loopback even
+# when WSL2 runs in NAT mode and 127.0.0.1 is not the Windows host.
+cdp_direct() {
+  curl -sS --fail --globoff -m 3 -X "$1" "http://127.0.0.1:${PORT}$2" 2>/dev/null
+}
+
+cdp() {
+  local out rc=0
+  out="$(cdp_direct "$1" "$2")" || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    printf '%s\n' "$out"
+    return 0
+  fi
+  if [ "$rc" -eq 7 ] && is_wsl && command -v powershell.exe >/dev/null 2>&1; then
+    out="$(powershell.exe -NoProfile -Command "try { (Invoke-WebRequest -UseBasicParsing -TimeoutSec 3 -Method $1 -Uri 'http://127.0.0.1:${PORT}$2').Content } catch { exit 1 }" 2>/dev/null | tr -d '\r')" || true
+    if [ -n "$out" ]; then
+      printf '%s\n' "$out"
+      return 0
+    fi
+  fi
+  return "$rc"
+}
+
+# probe: 0 = DevTools endpoint answering, 1 = nothing listening, 2 = port taken by something else.
+# Sets VERSION_JSON on success.
+probe() {
+  local rc=0
+  VERSION_JSON="$(cdp GET /json/version)" || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    case "$VERSION_JSON" in
+      *webSocketDebuggerUrl*) return 0 ;;
+      *) return 2 ;;
+    esac
+  fi
+  [ "$rc" -eq 7 ] && return 1
+  return 2
+}
+
+port_conflict() {
+  echo "Error: port ${PORT} is in use by something that is not Chrome DevTools." >&2
+  echo "  Pick another port: chrome-debug -p <port>" >&2
+  exit 1
+}
+
+# WSL2 NAT: Windows Chrome only listens on Windows loopback, so Linux tools cannot reach it.
+nat_note() {
+  if is_wsl && ! cdp_direct GET /json/version >/dev/null; then
+    echo "  Note: reachable from Windows only, not from inside WSL (WSL2 NAT networking)." >&2
+    echo "        For WSL-side tools (MCP, puppeteer), set networkingMode=mirrored under [wsl2]" >&2
+    echo "        in %UserProfile%\\.wslconfig, then run 'wsl --shutdown'." >&2
+  fi
+}
+
+# Percent-encode every byte except unreserved characters, so '#', '[', '?', '&'
+# and existing '%' survive being carried inside a /json/new?<url> request.
+urlencode() {
+  local LC_ALL=C s="$1" i c out=""
+  for ((i = 0; i < ${#s}; i++)); do
+    c="${s:i:1}"
+    case "$c" in
+      [a-zA-Z0-9._~-]) out+="$c" ;;
+      *) out+="$(printf '%%%02X' "'$c")" ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
+# Give scheme-less input a scheme: localhost/loopback get http, the rest https.
+normalize_url() {
+  case "$1" in
+    *://*|about:*|chrome:*|data:*|file:*) printf '%s' "$1" ;;
+    localhost*|127.0.0.1*|\[::1\]*) printf 'http://%s' "$1" ;;
+    *) printf 'https://%s' "$1" ;;
+  esac
+}
+
+# --- Status Action ------------------------------------------------------------
+if [ "$ACTION" = "status" ]; then
+  rc=0; probe || rc=$?
+  if [ "$rc" -eq 2 ]; then
+    echo "✖ Port ${PORT} is in use, but not by Chrome DevTools"
+    exit 2
+  elif [ "$rc" -eq 1 ]; then
+    echo "○ No Chrome debug session active on port ${PORT}"
+    exit 1
+  fi
+  BROWSER="$(printf '%s\n' "$VERSION_JSON" | grep -o '"Browser": *"[^"]*"' | head -1 | cut -d'"' -f4)"
+  WS="$(printf '%s\n' "$VERSION_JSON" | grep -o '"webSocketDebuggerUrl": *"[^"]*"' | head -1 | cut -d'"' -f4)"
+  echo "● Chrome debug session is ACTIVE on port ${PORT}"
+  echo "  Browser:   ${BROWSER:-Chrome}"
+  echo "  Endpoint:  http://127.0.0.1:${PORT}"
+  echo "  WebSocket: ${WS}"
+  TABS="$(cdp GET /json/list || true)"
+  if [ -n "$TABS" ]; then
+    echo "  Open tabs:"
+    if command -v jq >/dev/null 2>&1; then
+      printf '%s\n' "$TABS" | jq -r '.[] | select(.type=="page") | "    - \(.title) [\(.url)]"'
+    else
+      printf '%s\n' "$TABS" | grep -E '"title"|"url"' | sed 's/^[[:space:]]*//' | paste - - | sed 's/^/    - /'
+    fi
+  fi
+  nat_note
+  exit 0
+fi
+
+# --- Stop Action --------------------------------------------------------------
+if [ "$ACTION" = "stop" ]; then
+  # Match the exact argument token, and only Chrome/Chromium processes, so
+  # port 9222 never touches 92220 or an unrelated tool that mentions the flag.
+  WAS_UP=0
+  rc=0; probe || rc=$?
+  [ "$rc" -eq 0 ] && WAS_UP=1
+  ARG_RE="(^|[[:space:]])--remote-debugging-port=${PORT}([[:space:]]|\$)"
+  PIDS="$(ps -axo pid=,command= 2>/dev/null \
+    | awk -v re="$ARG_RE" -v self="$$" '$0 ~ re && tolower($0) ~ /chrom/ && $1 != self { print $1 }')"
+  if [ -n "$PIDS" ]; then
+    # shellcheck disable=SC2086
+    kill $PIDS 2>/dev/null || true
+  fi
+  if is_wsl && command -v powershell.exe >/dev/null 2>&1; then
+    powershell.exe -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name = 'chrome.exe'\" | Where-Object { \$_.CommandLine -match '(^|\s)(\x22)?--remote-debugging-port=${PORT}(\s|\x22|\$)' } | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }" >/dev/null 2>&1 || true
+  fi
+
+  for _ in 1 2 3 4 5 6; do
+    sleep 0.5
+    rc=0; probe || rc=$?
+    [ "$rc" -ne 0 ] && break
+  done
+  if [ "$rc" -eq 0 ]; then
+    echo "⚠ Could not stop Chrome on port ${PORT} (still answering)." >&2
+    exit 1
+  fi
+  if [ -n "$PIDS" ] || [ "$WAS_UP" = 1 ]; then
+    echo "✔ Stopped Chrome debug session on port ${PORT}"
+  else
+    echo "○ No Chrome debug session was running on port ${PORT}"
+  fi
+  exit 0
+fi
+
+# --- Open tabs in a session that is already running ---------------------------
+open_tab() {
+  local url resp
+  url="$(normalize_url "$1")"
+  if resp="$(cdp PUT "/json/new?$(urlencode "$url")")" && printf '%s' "$resp" | grep -q '"id"'; then
+    echo "  Opening tab: $url"
+  else
+    echo "Error: could not open tab: $url" >&2
+    return 1
+  fi
+}
+
+rc=0; probe || rc=$?
+if [ "$rc" -eq 2 ]; then
+  port_conflict
+elif [ "$rc" -eq 0 ]; then
+  echo "Chrome is already running in debug mode on port ${PORT}."
+  if [ ${#TARGET_URLS[@]} -gt 0 ]; then
+    FAILED=0
+    for url in "${TARGET_URLS[@]}"; do
+      open_tab "$url" || FAILED=1
+    done
+    exit "$FAILED"
+  fi
+  echo "  DevTools: http://127.0.0.1:${PORT}"
+  echo "  To open a page: chrome-debug <url>"
+  nat_note
+  exit 0
+fi
+
+# --- Locate Chrome Binary -----------------------------------------------------
+find_chrome() {
+  if is_mac; then
+    for p in \
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+      "$HOME/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+      "/Applications/Chromium.app/Contents/MacOS/Chromium"; do
+      if [ -x "$p" ]; then
+        printf '%s\n' "$p"
+        return 0
+      fi
+    done
+  fi
+
+  if is_wsl; then
+    # Prefer Windows Chrome on WSL for GPU acceleration and native OS integration
+    for p in \
+      "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe" \
+      "/mnt/c/Program Files (x86)/Google/Chrome/Application/chrome.exe"; do
+      if [ -x "$p" ]; then
+        printf '%s\n' "$p"
+        return 0
+      fi
+    done
+
+    # Per-user install under %LOCALAPPDATA%
+    local localappdata
+    localappdata="$(cd /mnt/c 2>/dev/null && cmd.exe /c 'echo %LOCALAPPDATA%' </dev/null 2>/dev/null | tr -d '\r')"
+    if [ -n "$localappdata" ] && command -v wslpath >/dev/null 2>&1; then
+      local user_chrome
+      user_chrome="$(wslpath -u "$localappdata" 2>/dev/null)/Google/Chrome/Application/chrome.exe"
+      if [ -x "$user_chrome" ]; then
+        printf '%s\n' "$user_chrome"
+        return 0
+      fi
+    fi
+
+    if command -v chrome.exe >/dev/null 2>&1; then
+      command -v chrome.exe
+      return 0
+    fi
+  fi
+
+  # Linux (or WSL Linux fallback)
+  for cmd in google-chrome-stable google-chrome chromium-browser chromium; do
+    if command -v "$cmd" >/dev/null 2>&1; then
+      command -v "$cmd"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+CHROME_BIN="$(find_chrome || true)"
+if [ -z "$CHROME_BIN" ]; then
+  echo "Error: Google Chrome or Chromium executable not found." >&2
+  if is_wsl; then
+    echo "Please install Google Chrome on Windows (e.g. C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe)" >&2
+    echo "or in WSL via: sudo apt install -y google-chrome-stable" >&2
+  elif is_mac; then
+    echo "Please install Google Chrome in /Applications/Google Chrome.app" >&2
+  else
+    echo "Please install Google Chrome or Chromium (e.g. apt install google-chrome-stable)" >&2
+  fi
+  exit 1
+fi
+
+# --- Configure Profile Directory and Argument Handling ------------------------
+CHROME_ARGS=(
+  "--remote-debugging-port=${PORT}"
+  "--remote-allow-origins=*"
+  "--no-first-run"
+  "--no-default-browser-check"
+)
+
+if [ "$HEADLESS" -eq 1 ]; then
+  CHROME_ARGS+=("--headless=new")
+fi
+
+FORMATTED_URLS=()
+if [[ "$CHROME_BIN" == *".exe" ]]; then
+  # Windows Chrome under WSL: keep the debug profile on the Windows NTFS drive
+  # to avoid SQLite lock issues over UNC / WSL paths.
+  if [ "$CUSTOM_PROFILE" -eq 1 ]; then
+    WIN_PROFILE="$(wslpath -w "$USER_DATA_DIR" 2>/dev/null || echo "$USER_DATA_DIR")"
+    PROFILE_DESC="$USER_DATA_DIR ($WIN_PROFILE)"
+  else
+    WIN_USERPROFILE="$(cd /mnt/c 2>/dev/null && cmd.exe /c 'echo %USERPROFILE%' </dev/null 2>/dev/null | tr -d '\r')"
+    if [ -n "$WIN_USERPROFILE" ]; then
+      WIN_PROFILE="${WIN_USERPROFILE}\\.chrome-debug-${PORT}"
+      PROFILE_DESC="$(wslpath -u "$WIN_USERPROFILE" 2>/dev/null)/.chrome-debug-${PORT}"
+    else
+      WIN_PROFILE="$(wslpath -w "$HOME/.chrome-debug-${PORT}" 2>/dev/null)"
+      PROFILE_DESC="$HOME/.chrome-debug-${PORT}"
+    fi
+  fi
+  CHROME_ARGS+=("--user-data-dir=${WIN_PROFILE}")
+
+  # Local files become Windows paths; everything else gets a scheme.
+  for u in ${TARGET_URLS[@]+"${TARGET_URLS[@]}"}; do
+    if [ -e "$u" ] && command -v wslpath >/dev/null 2>&1; then
+      FORMATTED_URLS+=("$(wslpath -w "$u")")
+    else
+      FORMATTED_URLS+=("$(normalize_url "$u")")
+    fi
+  done
+else
+  PROFILE_DIR="${USER_DATA_DIR:-$HOME/.chrome-debug-${PORT}}"
+  mkdir -p "$PROFILE_DIR"
+  PROFILE_DESC="$PROFILE_DIR"
+  CHROME_ARGS+=("--user-data-dir=${PROFILE_DIR}")
+  for u in ${TARGET_URLS[@]+"${TARGET_URLS[@]}"}; do
+    FORMATTED_URLS+=("$(normalize_url "$u")")
+  done
+fi
+
+# --- Launch Chrome in Background ----------------------------------------------
+echo "Starting Chrome in debug mode on port ${PORT}..."
+if is_mac && [ "$CHROME_BIN" = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ]; then
+  # launchd keeps it alive independently of the terminal
+  open -na "Google Chrome" --args "${CHROME_ARGS[@]}" ${FORMATTED_URLS[@]+"${FORMATTED_URLS[@]}"}
+else
+  nohup "$CHROME_BIN" "${CHROME_ARGS[@]}" ${FORMATTED_URLS[@]+"${FORMATTED_URLS[@]}"} </dev/null >/dev/null 2>&1 &
+  disown $! 2>/dev/null || true
+fi
+
+# --- Wait for Debug Port to Respond -------------------------------------------
+READY=0
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+  rc=0; probe || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    READY=1
+    break
+  fi
+  sleep 0.5
+done
+
+if [ "$READY" -eq 1 ]; then
+  echo "✔ Chrome debug session active on port ${PORT}"
+  echo "  DevTools URL: http://127.0.0.1:${PORT}"
+  echo "  Profile:      ${PROFILE_DESC}"
+  if [ ${#FORMATTED_URLS[@]} -gt 0 ]; then
+    echo "  Opened:       ${FORMATTED_URLS[*]}"
+  fi
+  echo "  (Sign-ins in this profile persist across sessions)"
+  nat_note
+else
+  echo "⚠ Chrome launched, but no DevTools endpoint answered on port ${PORT} within 10s." >&2
+  if is_wsl; then
+    echo "  Note for WSL: if Chrome opened, check 'chrome-debug --status' (NAT mode: see .wslconfig mirrored networking)." >&2
+  fi
+  exit 1
+fi
