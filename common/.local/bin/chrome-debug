@@ -14,7 +14,11 @@
 
 set -eo pipefail
 
+DEFAULT_PORT=9222
 PORT=9222
+PORT_SPECIFIED=0
+PROFILE_ARG=""
+PROFILE_NAME=""
 USER_DATA_DIR=""
 CUSTOM_PROFILE=0
 HEADLESS=0
@@ -31,27 +35,73 @@ is_mac() {
 
 usage() {
   cat <<EOF
-Usage: chrome-debug [options] [url ...]
+Usage: chrome-debug [options] [profile] [url ...]
 
-Launch Google Chrome with remote debugging enabled on port ${PORT} (or attach
-to an existing session). Works seamlessly across macOS, Linux, and WSL.
+Launch Google Chrome with remote debugging enabled (or attach to an existing
+session). Automatically assigns the next available port starting from 9222
+when running multiple distinct profiles.
+
+Arguments:
+  [profile]               Profile name (e.g. kalpchitra, dsn, work).
+                          Maps to ~/.chrome-debug-<profile>.
+  [url ...]               One or more URLs to open in the session.
 
 Options:
-  -p, --port <port>       Remote debugging port (default: 9222)
-  -d, --profile <dir>     Custom user data profile directory
+  -p, --port <port>       Explicit remote debugging port (default: auto, next free >= 9222)
+  -d, --profile <name|dir> Profile name or custom user data directory
   --headless              Run Chrome in headless mode
-  --status                Check if a debug session is currently active
-  --stop                  Stop the debug session on this port
+  --status [profile]      Check active debug session(s)
+  --stop [profile]        Stop the debug session on this port or profile
   -h, --help              Show this help message
 
 Examples:
-  chrome-debug
-  chrome-debug https://ads.google.com
-  chrome-debug -p 9223 https://example.com
+  chrome-debug                           # default debug session on port 9222 (~/.chrome-debug-9222)
+  chrome-debug kalpchitra                # launches/attaches ~/.chrome-debug-kalpachitra (auto-port >= 9222)
+  chrome-debug dsn                       # launches/attaches ~/.chrome-debug-maacdilsukhanagar
+  chrome-debug kalpchitra https://ads.google.com
   chrome-debug --status
-  chrome-debug --stop
+  chrome-debug --status kalpchitra
+  chrome-debug --stop kalpchitra
 EOF
   exit 0
+}
+
+# Distinguish URLs from profile names
+is_url() {
+  case "$1" in
+    http://*|https://*|about:*|chrome:*|data:*|file:*|localhost*|127.0.0.1*|\[::1\]*) return 0 ;;
+    /*|./*|../*) return 0 ;;
+    *.*)
+      # Email address is a profile identifier, not a URL
+      if [[ "$1" == *"@"* ]]; then
+        return 1
+      fi
+      return 0
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+# Canonical profile names and shortcuts
+normalize_profile() {
+  local p="$1"
+  [ -z "$p" ] && return 0
+  # Strip email domain if passed as an email address (e.g. user@gmail.com -> user)
+  if [[ "$p" == *"@"* ]]; then
+    p="${p%%@*}"
+  fi
+  case "$p" in
+    kalpchitra|kalpachitra|kalpachitracreations)
+      p="kalpachitra"
+      ;;
+    dsn|dilsukhnagar|maacdilsukhnagar|maacdilsukhanagar)
+      p="maacdilsukhanagar"
+      ;;
+    amr|ameerpet|maacameerpet)
+      p="maacameerpet"
+      ;;
+  esac
+  printf '%s' "$p"
 }
 
 # --- Parse arguments ----------------------------------------------------------
@@ -60,11 +110,12 @@ while [ $# -gt 0 ]; do
     -p|--port)
       [ $# -ge 2 ] && [ -n "$2" ] || { echo "Error: --port requires a port number" >&2; exit 1; }
       PORT="$2"
+      PORT_SPECIFIED=1
       shift 2
       ;;
     -d|--profile|--user-data-dir)
-      [ $# -ge 2 ] && [ -n "$2" ] || { echo "Error: --profile requires a directory path" >&2; exit 1; }
-      USER_DATA_DIR="$2"
+      [ $# -ge 2 ] && [ -n "$2" ] || { echo "Error: --profile requires a name or directory path" >&2; exit 1; }
+      PROFILE_ARG="$2"
       CUSTOM_PROFILE=1
       shift 2
       ;;
@@ -93,7 +144,12 @@ while [ $# -gt 0 ]; do
       exit 1
       ;;
     *)
-      TARGET_URLS+=("$1")
+      if [ -z "$PROFILE_ARG" ] && [ "$CUSTOM_PROFILE" -eq 0 ] && ! is_url "$1"; then
+        PROFILE_ARG="$1"
+        CUSTOM_PROFILE=1
+      else
+        TARGET_URLS+=("$1")
+      fi
       shift
       ;;
   esac
@@ -109,25 +165,35 @@ if [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then
 fi
 PORT=$((10#$PORT))
 
+# Resolve profile directory if specified
+if [ -n "$PROFILE_ARG" ]; then
+  PROFILE_NAME="$(normalize_profile "$PROFILE_ARG")"
+  if [[ "$PROFILE_ARG" == /* ]] || [[ "$PROFILE_ARG" == ~* ]] || [[ "$PROFILE_ARG" == ./* ]] || [[ "$PROFILE_ARG" == ..* ]] || { is_wsl && [[ "$PROFILE_ARG" == *:* ]]; }; then
+    USER_DATA_DIR="${PROFILE_ARG/#\~/$HOME}"
+  else
+    USER_DATA_DIR="$HOME/.chrome-debug-${PROFILE_NAME}"
+  fi
+fi
+
 # --- CDP transport ------------------------------------------------------------
-# cdp <METHOD> <path>  prints the response body.
+# cdp <METHOD> <path> [port] prints the response body.
 # Exit: 0 ok, 7 nothing listening, anything else = a listener that did not answer
 # like DevTools (HTTP error, timeout).
-# On WSL it falls back to powershell.exe, which reaches Windows loopback even
-# when WSL2 runs in NAT mode and 127.0.0.1 is not the Windows host.
 cdp_direct() {
-  curl -sS --fail --globoff -m 3 -X "$1" "http://127.0.0.1:${PORT}$2" 2>/dev/null
+  local method="$1" path="$2" p="${3:-$PORT}"
+  curl -sS --fail --globoff -m 3 -X "$method" "http://127.0.0.1:${p}${path}" 2>/dev/null
 }
 
 cdp() {
+  local method="$1" path="$2" p="${3:-$PORT}"
   local out rc=0
-  out="$(cdp_direct "$1" "$2")" || rc=$?
+  out="$(cdp_direct "$method" "$path" "$p")" || rc=$?
   if [ "$rc" -eq 0 ]; then
     printf '%s\n' "$out"
     return 0
   fi
   if [ "$rc" -eq 7 ] && is_wsl && command -v powershell.exe >/dev/null 2>&1; then
-    out="$(powershell.exe -NoProfile -Command "try { (Invoke-WebRequest -UseBasicParsing -TimeoutSec 3 -Method $1 -Uri 'http://127.0.0.1:${PORT}$2').Content } catch { exit 1 }" 2>/dev/null | tr -d '\r')" || true
+    out="$(powershell.exe -NoProfile -Command "try { (Invoke-WebRequest -UseBasicParsing -TimeoutSec 3 -Method $method -Uri 'http://127.0.0.1:${p}${path}').Content } catch { exit 1 }" 2>/dev/null | tr -d '\r')" || true
     if [ -n "$out" ]; then
       printf '%s\n' "$out"
       return 0
@@ -136,11 +202,12 @@ cdp() {
   return "$rc"
 }
 
-# probe: 0 = DevTools endpoint answering, 1 = nothing listening, 2 = port taken by something else.
+# probe [port]: 0 = DevTools endpoint answering, 1 = nothing listening, 2 = port taken by something else.
 # Sets VERSION_JSON on success.
 probe() {
+  local p="${1:-$PORT}"
   local rc=0
-  VERSION_JSON="$(cdp GET /json/version)" || rc=$?
+  VERSION_JSON="$(cdp GET /json/version "$p")" || rc=$?
   if [ "$rc" -eq 0 ]; then
     case "$VERSION_JSON" in
       *webSocketDebuggerUrl*) return 0 ;;
@@ -166,6 +233,93 @@ nat_note() {
   fi
 }
 
+# Check if anything is listening on a TCP port
+is_port_listening() {
+  local p="$1"
+  if is_mac; then
+    lsof -iTCP:"${p}" -sTCP:LISTEN -P -n >/dev/null 2>&1 && return 0
+  fi
+  if is_wsl && command -v powershell.exe >/dev/null 2>&1; then
+    local ps_check
+    ps_check="$(powershell.exe -NoProfile -Command "if (Get-NetTCPConnection -LocalPort ${p} -State Listen -ErrorAction SilentlyContinue) { echo 1 }" 2>/dev/null | tr -d '\r')" || true
+    [ "$ps_check" = "1" ] && return 0
+  fi
+  if command -v ss >/dev/null 2>&1; then
+    ss -tlnH sport = :"$p" 2>/dev/null | grep -q ":$p" && return 0
+  fi
+  local rc=0
+  probe "$p" >/dev/null 2>&1 || rc=$?
+  [ "$rc" -ne 1 ] && return 0
+  return 1
+}
+
+# Scan from base port upwards to find the next free port
+find_next_free_port() {
+  local base="${1:-$DEFAULT_PORT}"
+  local candidate="$base"
+  local max=$((base + 50))
+  while [ "$candidate" -le "$max" ]; do
+    if ! is_port_listening "$candidate"; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+    candidate=$((candidate + 1))
+  done
+  echo "Error: no free port found between ${base} and ${max}" >&2
+  return 1
+}
+
+# Find if a Chrome process is already running with the given user-data-dir
+find_running_port_for_profile() {
+  local dir="$1"
+  [ -z "$dir" ] && return 1
+  dir="${dir/#\~/$HOME}"
+  local p
+  p="$(ps -axo command= 2>/dev/null \
+    | awk -v dir="$dir" '
+        tolower($0) ~ /chrom/ && index($0, "--user-data-dir=" dir) {
+          for (i = 1; i <= NF; i++) {
+            if ($i ~ /^--remote-debugging-port=[0-9]+$/) {
+              split($i, a, "=")
+              print a[2]
+              exit
+            }
+          }
+        }')"
+  if [ -n "$p" ]; then
+    printf '%s\n' "$p"
+    return 0
+  fi
+  if is_wsl && command -v powershell.exe >/dev/null 2>&1; then
+    p="$(powershell.exe -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name = 'chrome.exe'\" | Where-Object { \$_.CommandLine -like '*--user-data-dir=*' } | ForEach-Object { if (\$_.CommandLine -match '--remote-debugging-port=(\d+)') { \$Matches[1]; break } }" 2>/dev/null | tr -d '\r')" || true
+    if [ -n "$p" ]; then
+      printf '%s\n' "$p"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+# List all active Chrome debug sessions across ports
+list_all_sessions() {
+  ps -axo command= 2>/dev/null \
+    | awk '
+        tolower($0) ~ /chrom/ && /--remote-debugging-port=/ && !/Helper/ {
+          port = ""; dir = "";
+          for (i = 1; i <= NF; i++) {
+            if ($i ~ /^--remote-debugging-port=[0-9]+$/) {
+              split($i, a, "="); port = a[2];
+            }
+            if ($i ~ /^--user-data-dir=/) {
+              split($i, a, "="); dir = a[2];
+            }
+          }
+          if (port != "" && !seen[port]++) {
+            print port " " dir;
+          }
+        }' | sort -n
+}
+
 # Percent-encode every byte except unreserved characters, so '#', '[', '?', '&'
 # and existing '%' survive being carried inside a /json/new?<url> request.
 urlencode() {
@@ -189,75 +343,135 @@ normalize_url() {
   esac
 }
 
-# --- Status Action ------------------------------------------------------------
-if [ "$ACTION" = "status" ]; then
-  rc=0; probe || rc=$?
+# Print status of a session on a given port
+print_session_status() {
+  local p="$1" custom_dir="$2"
+  local rc=0
+  probe "$p" || rc=$?
   if [ "$rc" -eq 2 ]; then
-    echo "✖ Port ${PORT} is in use, but not by Chrome DevTools"
-    exit 2
+    echo "✖ Port ${p} is in use, but not by Chrome DevTools"
+    return 2
   elif [ "$rc" -eq 1 ]; then
-    echo "○ No Chrome debug session active on port ${PORT}"
-    exit 1
+    echo "○ No Chrome debug session active on port ${p}"
+    return 1
   fi
-  BROWSER="$(printf '%s\n' "$VERSION_JSON" | grep -o '"Browser": *"[^"]*"' | head -1 | cut -d'"' -f4)"
-  WS="$(printf '%s\n' "$VERSION_JSON" | grep -o '"webSocketDebuggerUrl": *"[^"]*"' | head -1 | cut -d'"' -f4)"
-  echo "● Chrome debug session is ACTIVE on port ${PORT}"
-  echo "  Browser:   ${BROWSER:-Chrome}"
-  echo "  Endpoint:  http://127.0.0.1:${PORT}"
-  echo "  WebSocket: ${WS}"
-  TABS="$(cdp GET /json/list || true)"
-  if [ -n "$TABS" ]; then
+  local browser ws tabs
+  browser="$(printf '%s\n' "$VERSION_JSON" | grep -o '"Browser": *"[^"]*"' | head -1 | cut -d'"' -f4)"
+  ws="$(printf '%s\n' "$VERSION_JSON" | grep -o '"webSocketDebuggerUrl": *"[^"]*"' | head -1 | cut -d'"' -f4)"
+  echo "● Chrome debug session is ACTIVE on port ${p}"
+  if [ -n "$custom_dir" ]; then
+    echo "  Profile:   ${custom_dir}"
+  fi
+  echo "  Browser:   ${browser:-Chrome}"
+  echo "  Endpoint:  http://127.0.0.1:${p}"
+  echo "  WebSocket: ${ws}"
+  tabs="$(cdp GET /json/list "$p" || true)"
+  if [ -n "$tabs" ]; then
     echo "  Open tabs:"
     if command -v jq >/dev/null 2>&1; then
-      printf '%s\n' "$TABS" | jq -r '.[] | select(.type=="page") | "    - \(.title) [\(.url)]"'
+      printf '%s\n' "$tabs" | jq -r '.[] | select(.type=="page") | "    - \(.title) [\(.url)]"'
     else
-      printf '%s\n' "$TABS" | grep -E '"title"|"url"' | sed 's/^[[:space:]]*//' | paste - - | sed 's/^/    - /'
+      printf '%s\n' "$tabs" | grep -E '"title"|"url"' | sed 's/^[[:space:]]*//' | paste - - | sed 's/^/    - /'
     fi
   fi
   nat_note
-  exit 0
+  return 0
+}
+
+# --- Status Action ------------------------------------------------------------
+if [ "$ACTION" = "status" ]; then
+  if [ "$PORT_SPECIFIED" -eq 1 ]; then
+    print_session_status "$PORT" "$USER_DATA_DIR"
+    exit $?
+  fi
+  if [ "$CUSTOM_PROFILE" -eq 1 ]; then
+    found_port="$(find_running_port_for_profile "$USER_DATA_DIR" || true)"
+    if [ -n "$found_port" ]; then
+      print_session_status "$found_port" "$USER_DATA_DIR"
+      exit $?
+    else
+      echo "○ No Chrome debug session active for profile '${PROFILE_NAME}' (${USER_DATA_DIR})"
+      exit 1
+    fi
+  fi
+
+  sessions="$(list_all_sessions || true)"
+  if [ -n "$sessions" ]; then
+    first=1
+    while read -r p dir; do
+      [ -z "$p" ] && continue
+      [ "$first" -eq 0 ] && echo ""
+      first=0
+      print_session_status "$p" "$dir" || true
+    done <<< "$sessions"
+    exit 0
+  else
+    print_session_status "$PORT" ""
+    exit $?
+  fi
 fi
 
 # --- Stop Action --------------------------------------------------------------
-if [ "$ACTION" = "stop" ]; then
-  # Match the exact argument token, and only Chrome/Chromium processes, so
-  # port 9222 never touches 92220 or an unrelated tool that mentions the flag.
-  WAS_UP=0
-  rc=0; probe || rc=$?
-  [ "$rc" -eq 0 ] && WAS_UP=1
-  ARG_RE="(^|[[:space:]])--remote-debugging-port=${PORT}([[:space:]]|\$)"
-  PIDS="$(ps -axo pid=,command= 2>/dev/null \
-    | awk -v re="$ARG_RE" -v self="$$" '$0 ~ re && tolower($0) ~ /chrom/ && $1 != self { print $1 }')"
-  if [ -n "$PIDS" ]; then
+stop_session_on_port() {
+  local p="$1" desc="$2"
+  local was_up=0 rc=0
+  probe "$p" || rc=$?
+  [ "$rc" -eq 0 ] && was_up=1
+  local arg_re="(^|[[:space:]])--remote-debugging-port=${p}([[:space:]]|\$)"
+  local pids
+  pids="$(ps -axo pid=,command= 2>/dev/null \
+    | awk -v re="$arg_re" -v self="$$" '$0 ~ re && tolower($0) ~ /chrom/ && $1 != self { print $1 }')"
+  if [ -n "$pids" ]; then
     # shellcheck disable=SC2086
-    kill $PIDS 2>/dev/null || true
+    kill $pids 2>/dev/null || true
   fi
   if is_wsl && command -v powershell.exe >/dev/null 2>&1; then
-    powershell.exe -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name = 'chrome.exe'\" | Where-Object { \$_.CommandLine -match '(^|\s)(\x22)?--remote-debugging-port=${PORT}(\s|\x22|\$)' } | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }" >/dev/null 2>&1 || true
+    powershell.exe -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name = 'chrome.exe'\" | Where-Object { \$_.CommandLine -match '(^|\s)(\x22)?--remote-debugging-port=${p}(\s|\x22|\$)' } | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }" >/dev/null 2>&1 || true
   fi
 
   for _ in 1 2 3 4 5 6; do
     sleep 0.5
-    rc=0; probe || rc=$?
+    rc=0; probe "$p" || rc=$?
     [ "$rc" -ne 0 ] && break
   done
   if [ "$rc" -eq 0 ]; then
-    echo "⚠ Could not stop Chrome on port ${PORT} (still answering)." >&2
-    exit 1
+    echo "⚠ Could not stop Chrome on port ${p} (still answering)." >&2
+    return 1
   fi
-  if [ -n "$PIDS" ] || [ "$WAS_UP" = 1 ]; then
-    echo "✔ Stopped Chrome debug session on port ${PORT}"
+  local label="port ${p}"
+  [ -n "$desc" ] && label="port ${p} (${desc})"
+  if [ -n "$pids" ] || [ "$was_up" -eq 1 ]; then
+    echo "✔ Stopped Chrome debug session on ${label}"
   else
-    echo "○ No Chrome debug session was running on port ${PORT}"
+    echo "○ No Chrome debug session was running on ${label}"
   fi
-  exit 0
+  return 0
+}
+
+if [ "$ACTION" = "stop" ]; then
+  if [ "$PORT_SPECIFIED" -eq 1 ]; then
+    stop_session_on_port "$PORT" "$USER_DATA_DIR"
+    exit $?
+  fi
+  if [ "$CUSTOM_PROFILE" -eq 1 ]; then
+    found_port="$(find_running_port_for_profile "$USER_DATA_DIR" || true)"
+    if [ -n "$found_port" ]; then
+      stop_session_on_port "$found_port" "$USER_DATA_DIR"
+      exit $?
+    else
+      echo "○ No Chrome debug session was running for profile '${PROFILE_NAME}' (${USER_DATA_DIR})"
+      exit 0
+    fi
+  fi
+  stop_session_on_port "$PORT" ""
+  exit $?
 fi
 
 # --- Open tabs in a session that is already running ---------------------------
 open_tab() {
   local url resp
   url="$(normalize_url "$1")"
-  if resp="$(cdp PUT "/json/new?$(urlencode "$url")")" && printf '%s' "$resp" | grep -q '"id"'; then
+  if resp="$(cdp PUT "/json/new?$(urlencode "$url")" "$PORT")" && printf '%s' "$resp" | grep -q '"id"'; then
     echo "  Opening tab: $url"
   else
     echo "Error: could not open tab: $url" >&2
@@ -265,11 +479,36 @@ open_tab() {
   fi
 }
 
-rc=0; probe || rc=$?
+# --- Resolve Port for Launch / Attach -----------------------------------------
+if [ "$PORT_SPECIFIED" -eq 0 ]; then
+  if [ "$CUSTOM_PROFILE" -eq 1 ]; then
+    existing_port="$(find_running_port_for_profile "$USER_DATA_DIR" || true)"
+    if [ -n "$existing_port" ]; then
+      rc=0; probe "$existing_port" || rc=$?
+      if [ "$rc" -eq 0 ]; then
+        PORT="$existing_port"
+      else
+        PORT="$(find_next_free_port "$DEFAULT_PORT")"
+      fi
+    else
+      PORT="$(find_next_free_port "$DEFAULT_PORT")"
+    fi
+  else
+    rc=0; probe "$PORT" || rc=$?
+    if [ "$rc" -eq 2 ]; then
+      PORT="$(find_next_free_port "$((DEFAULT_PORT + 1))")"
+    fi
+  fi
+fi
+
+rc=0; probe "$PORT" || rc=$?
 if [ "$rc" -eq 2 ]; then
   port_conflict
 elif [ "$rc" -eq 0 ]; then
   echo "Chrome is already running in debug mode on port ${PORT}."
+  if [ -n "$USER_DATA_DIR" ]; then
+    echo "  Profile:  ${USER_DATA_DIR}"
+  fi
   if [ ${#TARGET_URLS[@]} -gt 0 ]; then
     FAILED=0
     for url in "${TARGET_URLS[@]}"; do
@@ -278,7 +517,11 @@ elif [ "$rc" -eq 0 ]; then
     exit "$FAILED"
   fi
   echo "  DevTools: http://127.0.0.1:${PORT}"
-  echo "  To open a page: chrome-debug <url>"
+  if [ -n "$PROFILE_NAME" ]; then
+    echo "  To open a page: chrome-debug ${PROFILE_NAME} <url>"
+  else
+    echo "  To open a page: chrome-debug <url>"
+  fi
   nat_note
   exit 0
 fi
@@ -413,7 +656,7 @@ fi
 # --- Wait for Debug Port to Respond -------------------------------------------
 READY=0
 for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
-  rc=0; probe || rc=$?
+  rc=0; probe "$PORT" || rc=$?
   if [ "$rc" -eq 0 ]; then
     READY=1
     break

@@ -23,5 +23,8 @@ if ! command -v agy >/dev/null 2>&1 && command -v antigravity >/dev/null 2>&1; t
   alias agy='antigravity'
 fi
 
-# Chrome remote debugging session
+# Chrome remote debugging sessions
 alias cdebug='chrome-debug'
+alias cdebug-kalpchitra='chrome-debug kalpchitra'
+alias cdebug-dsn='chrome-debug dsn'
+alias cdebug-amr='chrome-debug amr'

@@ -113,7 +113,7 @@ Pramit's user-level rules live in kno-hub (private), not here: this repo is publ
 
 ### `chrome-debug` (alias `cdebug`)
 
-Starts Chrome with remote debugging on port 9222 and an isolated profile (`~/.chrome-debug-<port>`; sign-ins persist), or attaches to the session already running and opens the given URLs in it. `chrome-debug [-p port] [-d profile] [--headless] [url ...]`, plus `--status` and `--stop` (stops only that exact port). Works on macOS, Linux and WSL (uses Windows Chrome there). Under WSL2 NAT networking Windows Chrome is reachable from Windows only; for WSL-side tools set `networkingMode=mirrored` under `[wsl2]` in `%UserProfile%\.wslconfig` and run `wsl --shutdown`. Chrome is an optional dependency in `deps.list`.
+Starts Chrome with remote debugging (defaults to port 9222) and an isolated profile, or attaches to the session already running and opens the given URLs in it. Supports named profiles (e.g. `chrome-debug kalpchitra` -> `~/.chrome-debug-kalpachitra`, `chrome-debug dsn` -> `~/.chrome-debug-maacdilsukhanagar`), automatic port allocation for concurrent profiles (assigns next free port >= 9222), `--status [profile]` (lists active sessions and open tabs), and `--stop [profile]`. Aliases: `cdebug`, `cdebug-kalpchitra`, `cdebug-dsn`, `cdebug-amr`. Works on macOS, Linux and WSL (uses Windows Chrome there). Under WSL2 NAT networking Windows Chrome is reachable from Windows only; for WSL-side tools set `networkingMode=mirrored` under `[wsl2]` in `%UserProfile%\.wslconfig` and run `wsl --shutdown`. Chrome is an optional dependency in `deps.list`.
 
 ### kno-hub commands in `~/.local/bin`
 
