@@ -23,6 +23,8 @@
 #
 # Rows install in file order, so list a dependency before anything needing it.
 # The | character separates fields, so sh: commands cannot use pipes.
+# sh: commands download installers into a private mktemp -d dir, never a fixed /tmp name: a stale
+# file owned by another user makes a fixed name unwritable and the installer silently never runs.
 # ==============================================================================
 
 # --- Bootstrap ----------------------------------------------------------------
@@ -33,13 +35,13 @@ jq           | required | cmd:jq         | brew:jq    | apt:jq    | -  | common/
 
 # --- Shell --------------------------------------------------------------------
 zsh          | required | cmd:zsh        | brew:zsh   | apt:zsh   | -  | common/.zshrc, common/.zsh/
-oh-my-posh   | required | cmd:oh-my-posh | brew:jandedobbeleer/oh-my-posh/oh-my-posh | - | sh:curl -fsSL -o /tmp/omp-install.sh https://ohmyposh.dev/install.sh && bash /tmp/omp-install.sh -d ~/.local/bin | common/.zsh/50-prompt.zsh, common/.config/oh-my-posh/
+oh-my-posh   | required | cmd:oh-my-posh | brew:jandedobbeleer/oh-my-posh/oh-my-posh | - | sh:d=$(mktemp -d) && trap 'rm -rf "$d"' EXIT && curl -fsSL -o "$d/i.sh" https://ohmyposh.dev/install.sh && bash "$d/i.sh" -d ~/.local/bin | common/.zsh/50-prompt.zsh, common/.config/oh-my-posh/
 # Either font works; terminals must use the Mono (NFM) variant, see README.
 nerd-font    | required | font:CaskaydiaCove,GoogleSansCode | - | - | nerdfont:CascadiaCode | common/.config/oh-my-posh/*.json (glyphs)
 
 fzf                     | optional | cmd:fzf          | brew:fzf     | apt:fzf      | - | common/.zsh/20-completion.zsh
 zoxide                  | optional | cmd:zoxide       | brew:zoxide  | apt:zoxide   | - | common/.zsh/00-env.zsh
-mise                    | optional | cmd:mise         | brew:mise    | -            | sh:curl -fsSL -o /tmp/mise-install.sh https://mise.run && sh /tmp/mise-install.sh | common/.zsh/00-env.zsh (runtime manager: python, java, etc.)
+mise                    | optional | cmd:mise         | brew:mise    | -            | sh:d=$(mktemp -d) && trap 'rm -rf "$d"' EXIT && curl -fsSL -o "$d/i.sh" https://mise.run && sh "$d/i.sh" | common/.zsh/00-env.zsh (runtime manager: python, java, etc.)
 zsh-autosuggestions     | optional | file:/usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh,/opt/homebrew/share/zsh-autosuggestions/zsh-autosuggestions.zsh,/usr/local/share/zsh-autosuggestions/zsh-autosuggestions.zsh | brew:zsh-autosuggestions | apt:zsh-autosuggestions | - | common/.zsh/30-plugins.zsh
 zsh-syntax-highlighting | optional | file:/usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh,/opt/homebrew/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh,/usr/local/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh | brew:zsh-syntax-highlighting | apt:zsh-syntax-highlighting | - | common/.zsh/30-plugins.zsh
 bat                     | optional | cmd:batcat,bat   | brew:bat     | apt:bat      | - | common/.zsh/40-aliases.zsh
@@ -48,9 +50,9 @@ xclip@unix              | optional | cmd:xclip        | -            | apt:xclip
 chrome                  | optional | file:/Applications/Google Chrome.app,~/Applications/Google Chrome.app,/Applications/Chromium.app,/mnt/c/Program Files/Google/Chrome/Application/chrome.exe,/mnt/c/Program Files (x86)/Google/Chrome/Application/chrome.exe,/usr/bin/google-chrome,/usr/bin/google-chrome-stable,/usr/bin/chromium,/usr/bin/chromium-browser | cask:google-chrome | - | manual:Install Google Chrome from https://www.google.com/chrome/ | common/.local/bin/chrome-debug
 
 # --- Agents -------------------------------------------------------------------
-claude       | optional | cmd:claude      | - | - | sh:curl -fsSL -o /tmp/claude-install.sh https://claude.ai/install.sh && bash /tmp/claude-install.sh | common/.config/oh-my-posh/claude-omp.json, common/.config/oh-my-posh/claude-statusline.sh
+claude       | optional | cmd:claude      | - | - | sh:d=$(mktemp -d) && trap 'rm -rf "$d"' EXIT && curl -fsSL -o "$d/i.sh" https://claude.ai/install.sh && bash "$d/i.sh" | common/.config/oh-my-posh/claude-omp.json, common/.config/oh-my-posh/claude-statusline.sh
 antigravity  | optional | cmd:agy,antigravity | cask:antigravity-cli | - | manual:Install the Antigravity CLI from Google's Antigravity docs, then re-run install.sh | common/.config/oh-my-posh/agy-omp.json, common/.zsh/40-aliases.zsh (agy)
-codex        | optional | cmd:codex      | - | - | sh:curl -fsSL -o /tmp/codex-install.sh https://chatgpt.com/codex/install.sh && sh /tmp/codex-install.sh | scripts/codex-config.sh, install.sh (Codex config, global instructions)
+codex        | optional | cmd:codex      | - | - | sh:d=$(mktemp -d) && trap 'rm -rf "$d"' EXIT && curl -fsSL -o "$d/i.sh" https://chatgpt.com/codex/install.sh && CODEX_NON_INTERACTIVE=1 sh "$d/i.sh" | scripts/codex-config.sh, install.sh (Codex config, global instructions)
 
 # --- Agent skills -------------------------------------------------------------
 python3      | optional | cmd:python3     | brew:python | apt:python3 | - | agent-skills/runbook/scripts/ (build_runbook.py; runbook.mjs tick rebuilds through it)
