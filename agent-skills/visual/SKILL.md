@@ -1,169 +1,155 @@
 ---
 name: visual
-description: "Make an illustrated page (a 'visual') that explains one topic to a reader who was not in the conversation: charts, block diagrams, flows, tables and illustrations with plain-English text, built from a data JSON into one file, printed to an A4 PDF and checked page by page, then listed in the repo's visuals index. Use when the user types /visual, or asks for a visual, an explainer, an illustrated page, a one-pager, a printable summary or a PDF explainer of something discussed. Also /visual list (every visual knowledge hub with what each shows) and /visual update <slug>."
+description: "Make an infographic style illustrated editorial explainer grounded in factual data: a one-file HTML page (and printable A4 PDF) of hero illustrations, annotated cutaways, 3D exploded views, scroll stories and charts, for a reader starting from nothing. Use when the user types /visual, or asks for a visual, explainer, infographic, illustrated page, brochure or printable summary of something. Also /visual list (every visual with what it shows) and /visual update <slug>."
 ---
 
 # visual
 
-A visual is one printable page set (usually one to five A4 pages) that explains **one topic** to a
-reader with no context: what it is, how it works, what was decided and why. It is a picture first,
-with short text around the pictures. A repo's visuals live under one folder (`docs/visuals/` if
-`docs/` exists, else `visuals/`) with an index table in its `README.md`. Each visual has a folder of
-its own name, as runbooks do:
+Every visual is an **infographic style illustrated editorial explainer grounded in factual data**. Think of a
+printed course brochure crossed with DK's *How Technology Works*: someone with near-zero memory of the topic
+picks it up, wants to keep reading, and leaves with a clear picture in their mind. Say that target verbatim in
+your plan.
+
+Four goals rank equally. Each is a gate in step 8.
+
+1. **Render fidelity.** Sharp text and fonts; nothing clipped, overlapping or broken at any size.
+2. **Visual richness.** Subject-specific illustration with light, shade, depth and detail, on the level of DK.
+3. **Communication.** The pieces come together into one clear picture in the reader's mind.
+4. **Grounded in fact.** True to its sources in substance. Simplify, round and use analogy freely, and label
+   what is drawn to explain. Grounded is the bar; exhaustive precision is not.
+
+A visual lives in `docs/visuals/<slug>/` (`visuals/` if there is no `docs/`), with an index in the folder's `README.md`:
 
 ```text
-docs/visuals/<slug>/
-  <slug>.pdf         the page (or <slug>.html when the PDF could not be made clean)
-  <slug>.vis.json    the content; the only file anyone edits
-  README.md          what the page is about, section by section; regenerated on publish
+<slug>.html       the page: one file, works offline. The default.
+<slug>.pdf        the A4 version, when asked for (or use the page's Print button)
+<slug>.vis.json   the content, the only prose anyone edits
+art/              the illustrations and the script that drew them
+README.md         regenerated on publish
 ```
 
-**You author data, never markup.** Three layers, as in the runbook skill:
-
-| Layer | File | Written by |
-| --- | --- | --- |
-| Content | `<slug>.vis.json` (contract: `references/schema.md`) | You, per visual |
-| Presentation | `assets/visual-template.html` | Nobody; fixed for every visual |
-| Build, check, publish, list | `scripts/visual.py` | Nobody; run it |
-
-Do not read the template or the script: the schema and the commands below are all you need. If a
-visual needs something the scaffold cannot draw, use an `svg` block, or propose a scaffold change
-(made once, for every visual). Never hand-edit a built HTML or PDF.
-
-`V` below means `python3 <this skill's folder>/scripts/visual.py`. `W` is a work folder outside the
-repo: the session's scratchpad if there is one, else `/tmp/visual/<slug>`.
+You author data and art, never page markup. `assets/visual-template.html` draws every visual. `scripts/visual.py`
+builds, checks and publishes; run it as `V` (`python3 <this skill's folder>/scripts/visual.py`). `W` is a work
+folder outside the repo: the session's scratchpad if there is one, else `/tmp/visual/<slug>`. A capability the
+template lacks becomes a template change, made once for every visual.
 
 ## Commands
 
 | Command | Does |
 | --- | --- |
-| `/visual [topic hint] [--html]` | A new visual. PDF by default; `--html` skips the PDF and saves one HTML file. |
-| `/visual update <slug> [what changed]` | Edit `<slug>.vis.json`, rebuild, republish in the same format. |
+| `/visual [topic hint] [--pdf]` | A new visual. HTML by default; `--pdf` also publishes the A4 PDF. |
+| `/visual update <slug> [what changed]` | Edit the data or art, rebuild, republish in the same formats. |
 | `/visual list [--all]` | Run `V list` (`--all`: `V list --projects ~/projects`). Show the output as printed, in a code block. |
 
-## Rules for every visual
+## House rules
 
-1. **One topic.** If the conversation covers several, pick the most likely one and name it in the
-   first line of your reply, so a wrong guess is caught at once. Ask only if nothing points to a topic.
-2. **A cold reader.** Every section must make sense to someone who never saw the conversation. No
-   "as discussed", no labels invented in the chat, no unexplained short forms.
-3. **Plain English.** Short sentences (under 25 words), common words, active voice. Spell out a short
-   form the first time, or put it in a `glossary` block.
-4. **No invented numbers.** Every number comes from a source you read, or carries `example: true`
-   (drawn with an EXAMPLE badge). An unmeasured value is `TBD`, not a guess.
-5. **The data file is the source.** It stays in the visual's folder so the next change is a data edit.
-   The repo's Markdown docs stay the source of truth for what the page says; list them in `sources`.
-6. **No commit or push.** Leave files in the working tree.
+| Area | Default |
+| --- | --- |
+| Reading experience | The main conclusion in 30 seconds; the reasoning in a few minutes. |
+| Page purpose | One main question and one clear takeaway per spread. |
+| Text budget | 120–180 words per main A4 page; review anything over 220. Appendices can be denser. |
+| Typography | A4 body 11.5–12.5 pt, captions at least 10 pt. Add pages before shrinking text. |
+| Explanatory visuals | One substantial focal visual per main spread, unless something simpler truly works better. |
+| Visual allocation | Roughly 40–60% of the main content area in meaningful visuals. Text in decorative cards counts for nothing. |
+| Paragraphs | Short. The first useful visual comes before any long introduction. |
+| Variety | Alternate annotated illustrations, comparisons, process views and worked examples. |
+| Consistency | One type scale, spacing system, palette, stroke weight and illustration treatment. |
+| Evidence | Separate observed, reported, inferred and unknown with status badges. Give usable source links. |
+| Honesty | No invented chart data or "confidence percentages". No illustration presented as a real screenshot. |
+| Export | Selectable text, vector art where possible, every rendered page inspected. |
+
+Treat the numbers as signals. Record a justified exception and move on; never pad a graphic to hit a quota.
 
 ## `/visual [topic]`: the steps
 
-### 1. Read the conversation
+### 1. Name the topic
 
-Name the topic in one phrase and pick a slug. Note what the conversation already settled: decisions,
-numbers, names, open questions. Run `V list` to see if a visual on this topic exists; if one does,
-this is an update to it, not a new page (say so and switch to `/visual update`).
+Pick one topic and a slug, and name them in the first line of your reply. Run `V list`; if a visual on this topic exists, this is an update.
 
-### 2. Gather the documents
+### 2. Gather the facts
 
-Read what the page will state, and no more. Start from files the conversation named. In a repo with
-`stratadoc.yaml`, use the docs map (`docs/README.md`), the nodes on the topic, and one level of their
-`upstream`; take registered values from `docs/00-facts/facts.json`. Search (`grep -ril <term> docs/`)
-for terms the topic turns on. Prefer the newest decision: an accepted ADR beats a proposal; a later
-run-history entry beats an earlier one. Every file you rely on goes in `sources`.
+Read what the page will state, starting from files the conversation named. In a repo with `stratadoc.yaml`, use
+`docs/README.md`, the nodes on the topic and `docs/00-facts/facts.json`. Prefer the newest decision. Every file you
+rely on goes in `sources`, with a readable title. Done when you can state the conclusion and each number from a
+source you read; an unknown that matters is written as `TBD` beside the claim it affects.
 
-### 3. Settle what the page must contain
+### 3. Find the big idea
 
-Write down, for yourself: who reads it, the one question it answers, and what the reader should
-know or be able to decide after reading. Fill gaps from the documents. If something the page needs
-is in neither the conversation nor the documents, and a wrong guess would mislead, ask once (each
-question with your default answer); otherwise write `TBD` and carry on.
+Decide who reads it, the one question it answers, and its 30-second conclusion. Then find the **big idea**: one
+concrete visual metaphor that carries the conclusion and titles the page (a machine with missing parts; a judging
+panel with empty seats). Done when the title and hero picture would make a stranger curious.
 
-### 4. Plan the sections and pictures
+### 4. Direct the art
 
-Three to seven sections, in the order a reader needs them (usually: what it is, how it works, the
-rules or numbers, what happens next). For each: a title, the **takeaway** (one sentence the reader
-leaves with), and the blocks, at least one of them a picture. Use the "Picking the picture" table in
-`references/schema.md`. Show the plan in chat in at most twelve lines, as your default, and go on
-building unless the user asked to approve the plan first.
+Read [references/art-direction.md](references/art-direction.md). Choose a preset, a reference to draw from, and the
+scene sequence. Done when you can name what each spread borrows and from whom.
 
-### 5. Write the data
+### 5. Storyboard
 
-Read `references/schema.md` once. Write `W/<slug>.vis.json` (for an update, edit the file in the
-visual's folder). Keep text short: a section is mostly its pictures. Set `updated`, `updated_by`.
-Run `V validate W/<slug>.vis.json` and fix every error.
+Plan three to seven spreads. For each: question, headline (the takeaway as a statement), layout, scene, focal art,
+and this sentence: "This visual helps the reader understand ___ by showing ___." Vary layouts and scenes. Show the
+plan in at most twelve lines and go on building unless the user asked to approve it first.
 
-### 6. Build and check: at most five attempts
+### 6. Draw the art
 
-```bash
-V build W/<slug>.vis.json --work W --attempt N        # add --no-pdf for an HTML-only visual
-```
+Draw the hardest illustration first and look at it before drawing the rest. Compose scenes in a short script,
+`W/art/draw.py`, using `assets/art_kit.py` and saving to `W/art/`; it travels with the visual for the next update. Done when each focal image passes the removal test: take it away and
+understanding suffers.
 
-It writes `W/<slug>.html`, the PDF, one PNG per page in `W/pages/`, the page text in `W/<slug>.txt`,
-and prints a report: **MUST FIX** (render errors, anything wider than the page, text or borders in the
-margin, labels wider than their box, blank pages), **JUDGE** (big gaps, a heading stranded at the
-foot of a page, a near-empty last page, missing sources, numbers without a source) and **LANGUAGE**
-(long sentences, unexplained short forms, repeated words, odd spellings when a dictionary exists).
+### 7. Write the data
 
-Each attempt:
+Read [references/schema.md](references/schema.md). Write `W/<slug>.vis.json`, with `updated` and `updated_by`. Keep a
+short `claims` list for the headline numbers and any contested claim: claim, source, status. Let pictures and notes
+carry the explanation. Run `V validate W/<slug>.vis.json` until it has no errors.
 
-1. Fix every MUST FIX item in the data. Fix a JUDGE item unless you can say why it is fine.
-2. **Look at every page the report lists as changed** (read the PNGs). Check margins, alignment,
-   overlaps, cut-off labels, broken borders, awkward page breaks, pictures that do not match the text.
-3. On the first attempt, and after any text change, **read `W/<slug>.txt` as the cold reader**: does
-   each section make sense alone; is the English simple; any spelling mistakes; any short form not
-   spelled out; does each takeaway follow from its section.
-4. If anything needs fixing, edit the data and build again with `--attempt N+1`. Fixes for layout:
-   shorten labels, drop a table column, split a big block in two, move a block to another section,
-   set `break_before` on a section. Never fix the PDF itself.
-
-Stop as soon as an attempt is clean on all three counts. **Pass** means no MUST FIX items, no JUDGE
-items you could not justify, and your own page review and read-through found nothing. After the fifth
-failed attempt, stop and save the HTML instead (step 7), and say what still fails.
-
-### 6b. Independent review: one reviewer, one pass
-
-The script cannot tell whether the page is true, and you wrote the page, so you will miss your own
-mistakes. After step 6 passes (or the fifth attempt fails), and before publishing, hand the page to
-one reviewer subagent on **a different model from yours** (the Agent tool, with `model` set; no
-conversation history). Give it only: the page PNGs in `W/pages/`, `W/<slug>.txt`, the files in
-`sources` (their full paths, if they sit outside this repo) and a one-line topic. Ask for two lists,
-each item with its page or section and a fix, and tell it to rewrite nothing:
-
-- **LAYOUT**: anything wrong in the images (clipped or touching boxes, stranded headings, misaligned
-  labels, a picture that does not match its text).
-- **CLAIMS**: any statement, number or step the sources do not support, anything invented, and
-  anything a cold reader could not follow.
-
-Fix what you agree with and rebuild once (it counts toward the five attempts), then publish. Review
-once only: no second round and no score. In the reply (step 8), say what the reviewer found, and what
-you left unchanged and why. With no subagent tool, skip this step and say so.
-
-### 7. Publish
+### 8. Build and look: at most five attempts
 
 ```bash
-V publish W/<slug>.vis.json --format pdf     # or --format html (asked for, or the PDF failed)
+V build W/<slug>.vis.json --work W --attempt N
 ```
 
-Run it from inside the repo the visual belongs to: the visuals folder is found from the current
-directory, not from where the JSON sits.
+It writes the HTML and PDF, `W/shots/` (each spread at desktop, tablet and phone, plus `live-*` frames as a reader
+scrolls), `W/pages/` (each PDF page), `W/<slug>.txt` (all visible text, including text in the art), a table of words
+and graphics per A4 page, and a report: **MUST FIX** (render errors, overlaps, clipping, near-invisible text, spills,
+sideways scroll), **JUDGE** (small type, low contrast, budgets, repetition, sparse art) and **LANGUAGE**.
 
-It copies the output into `<visuals>/<slug>/` (`--dir` sets `<visuals>`), keeps `<slug>.vis.json` there,
-writes the folder's `README.md` from the data, deletes the other format's file (the HTML is transient
-once the PDF passes), and adds or updates the visual's row in `<visuals>/README.md`. In a repo with its own doc checks (for
-example `npm run lint:docs` in a stratadoc repo), run them, since the index is a doc.
+Each attempt: fix every MUST FIX; fix each JUDGE item or say why it is fine; look at every shot and page as an art
+director; read `W/<slug>.txt` as the cold reader; rebuild if anything needs fixing. Repair the art, data or template
+and rebuild. Pass all four gates:
 
-If the page is also to be shared as a claude.ai page: publish the HTML from `W/<slug>.html`, put the
-link in `shared_link`, and run `V publish` again so the index carries it.
+- **Fidelity:** no MUST FIX. At desktop, phone and A4, nothing clipped, crowded or misaligned, and animations read well in the `live-*` frames.
+- **Richness:** the shots look like a published explainer, with recognisable subject-specific art. A wall of cards or plain boxes fails.
+- **Communication:** the scan test passes: headlines, pictures and captions alone recover the argument. Notes sit beside what they describe.
+- **Grounded:** nothing misleads, and drawn material is labelled `illustrative`.
 
-### 8. Reply
+After a fifth failed attempt, publish with `--accept-failures` and say what still fails.
 
-A few lines: the topic, the saved path, pages and attempts used, what the reviewer found, the defaults
-you took, anything you could not verify or left `TBD`.
+### 9. Independent review: one reviewer, one pass
+
+Hand one reviewer subagent on a different model (the Agent tool, with `model` set) the `W/shots/` images, `W/pages/`,
+`W/<slug>.txt`, the `sources` files, a one-line topic and the four gates. It rewrites nothing and returns located
+fixes under **FIDELITY**, **RICHNESS**, **COMMUNICATION** and **MISLEADING** (a claim the sources contradict, or a reader taking
+away something false; simplification is fine). Fix what you agree with and rebuild once. In the reply, say what it
+found and what you left. With no subagent tool, say so.
+
+### 10. Publish
+
+```bash
+V publish W/<slug>.vis.json --work W                 # or --format both for HTML and A4 PDF
+```
+
+Run it from inside the repo the visual belongs to. It refuses a build whose data, art or template has since changed,
+copies the checked output, data and art into the folder, deletes output from an earlier build, and updates the
+index. Run the repo's own doc checks if it has them (`npm run check`). Leave files uncommitted for the user.
+
+For a claude.ai page too: publish `W/<slug>.html`, put the link in `shared_link`, and run `V publish` again.
+
+### 11. Reply
+
+A few lines: the big idea, the saved path, spreads and attempts, what the reviewer found, your defaults, and anything `TBD` or unverified.
 
 ## `/visual update <slug>`
 
-Read `<visuals>/<slug>/<slug>.vis.json` and the sources that changed. Edit the data, set `updated`,
-then steps 6 to 8 with the format the visual already has. A visual with no `.vis.json` (hand-made
-HTML) is converted: read the HTML once, write its content as a `.vis.json`, then build and publish.
-Publishing a PDF replaces the hand-made HTML file and its hand-written README; say so in the reply
-(git keeps the old copy).
+Read `<visuals>/<slug>/<slug>.vis.json` and the sources that changed. Edit data or art in place, set `updated`, then
+steps 8 to 11, building to `W` with the JSON where it sits. A `visual/1` file or hand-made HTML gets re-storyboarded
+as `visual/2` from step 3; say so in the reply (git keeps the old copy).
