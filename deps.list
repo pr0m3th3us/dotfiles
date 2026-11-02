@@ -48,7 +48,7 @@ bat                     | optional | cmd:batcat,bat   | brew:bat     | apt:bat  
 fd                      | optional | cmd:fdfind,fd    | brew:fd      | apt:fd-find  | - | common/.zsh/40-aliases.zsh
 xclip@unix              | optional | cmd:xclip        | -            | apt:xclip    | - | common/.zsh/os/wsl.zsh
 chrome                  | optional | file:/Applications/Google Chrome.app,~/Applications/Google Chrome.app,/Applications/Chromium.app,/mnt/c/Program Files/Google/Chrome/Application/chrome.exe,/mnt/c/Program Files (x86)/Google/Chrome/Application/chrome.exe,/usr/bin/google-chrome,/usr/bin/google-chrome-stable,/usr/bin/chromium,/usr/bin/chromium-browser | cask:google-chrome | - | manual:Install Google Chrome from https://www.google.com/chrome/ | common/.local/bin/chrome-debug
-rclone                  | optional | cmd:rclone       | brew:rclone  | apt:rclone   | - | fabo repo scripts/ops-drive.sh (Google Drive sync of ~/fabo; outside this repo)
+rclone                  | optional | cmd:rclone       | brew:rclone  | -            | sh:d=$(mktemp -d) && trap 'rm -rf "$d"' EXIT && curl -fsSL -o "$d/i.sh" https://rclone.org/install.sh && sudo bash "$d/i.sh" | fabo repo scripts/ops-drive.sh (Google Drive sync of ~/fabo; outside this repo)
 
 # --- Agents -------------------------------------------------------------------
 claude       | optional | cmd:claude      | - | - | sh:d=$(mktemp -d) && trap 'rm -rf "$d"' EXIT && curl -fsSL -o "$d/i.sh" https://claude.ai/install.sh && bash "$d/i.sh" | common/.config/oh-my-posh/claude-omp.json, common/.config/oh-my-posh/claude-statusline.sh
