@@ -27,4 +27,3 @@ fi
 alias cdebug='chrome-debug'
 alias cdebug-kalpchitra='chrome-debug kalpchitra'
 alias cdebug-dsn='chrome-debug dsn'
-alias cdebug-amr='chrome-debug amr'

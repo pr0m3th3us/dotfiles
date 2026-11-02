@@ -52,16 +52,22 @@ Options:
   --headless              Run Chrome in headless mode
   --status [profile]      Check active debug session(s)
   --stop [profile]        Stop the debug session on this port or profile
+  --list                  List existing debug profiles, the Google account each is
+                          signed in to, and whether it is running
   -h, --help              Show this help message
 
 Examples:
   chrome-debug                           # default debug session on port 9222 (~/.chrome-debug-9222)
-  chrome-debug kalpchitra                # launches/attaches ~/.chrome-debug-kalpachitra (auto-port >= 9222)
-  chrome-debug dsn                       # launches/attaches ~/.chrome-debug-maacdilsukhanagar
+  chrome-debug kalpchitra                # launches/attaches ~/.chrome-debug-kalpchitracreations (auto-port >= 9222)
+  chrome-debug dsn                       # launches/attaches ~/.chrome-debug-maacdsn
   chrome-debug kalpchitra https://ads.google.com
   chrome-debug --status
   chrome-debug --status kalpchitra
   chrome-debug --stop kalpchitra
+  chrome-debug --list                    # check here before creating a new profile
+
+An account is read from the profile's Chrome sign-in. If a profile is not signed
+in to Chrome, label it by hand:  echo you@gmail.com > ~/.chrome-debug-<name>/.account
 EOF
   exit 0
 }
@@ -91,14 +97,15 @@ normalize_profile() {
     p="${p%%@*}"
   fi
   case "$p" in
-    kalpchitra|kalpachitra|kalpachitracreations)
-      p="kalpachitra"
+    kalpchitra|kalpachitra|kalpachitracreations|kalpchitracreations)
+      p="kalpchitracreations"
       ;;
-    dsn|dilsukhnagar|maacdilsukhnagar|maacdilsukhanagar)
-      p="maacdilsukhanagar"
+    dsn|dilsukhnagar|dilsukhanagar|maacdilsukhnagar|maacdilsukhanagar|maacdsn)
+      p="maacdsn"
       ;;
-    amr|ameerpet|maacameerpet)
-      p="maacameerpet"
+    maacameerpet|ameerpet26|maacameerpet26)
+      # A separate account (maacameerpet26@gmail.com), not the amr shortcut.
+      p="maacameerpet26"
       ;;
   esac
   printf '%s' "$p"
@@ -129,6 +136,10 @@ while [ $# -gt 0 ]; do
       ;;
     --stop|stop|--kill|kill)
       ACTION="stop"
+      shift
+      ;;
+    --list|list|--ls|ls)
+      ACTION="list"
       shift
       ;;
     -h|--help)
@@ -320,6 +331,43 @@ list_all_sessions() {
         }' | sort -n
 }
 
+# Value of the first non-empty "key":"value" in a Chrome JSON file (no jq needed).
+json_field() {
+  grep -o "\"$2\":\"[^\"]*\"" "$1" 2>/dev/null | grep -v '":""$' | head -1 | cut -d'"' -f4 || true
+}
+
+# Directories that may hold .chrome-debug-* profiles: $HOME, plus the Windows
+# profile on WSL (Windows Chrome keeps its unnamed profiles there).
+profile_roots() {
+  printf '%s\n' "$HOME"
+  if is_wsl && command -v cmd.exe >/dev/null 2>&1 && command -v wslpath >/dev/null 2>&1; then
+    local win
+    win="$(cd /mnt/c 2>/dev/null && cmd.exe /c 'echo %USERPROFILE%' </dev/null 2>/dev/null | tr -d '\r')" || true
+    [ -n "$win" ] && wslpath -u "$win" 2>/dev/null || true
+  fi
+}
+
+# One tab-separated row per profile: name, account email, account name, port ("-" if stopped).
+# The account comes from the Chrome sign-in; a .account file in the profile overrides it.
+profile_rows() {
+  local sessions root d email who port
+  sessions="$(list_all_sessions || true)"
+  while read -r root; do
+    for d in "$root"/.chrome-debug-*; do
+      [ -d "$d" ] || continue
+      email="$(json_field "$d/Local State" user_name)"
+      who="$(json_field "$d/Local State" gaia_name)"
+      [ -n "$email" ] || email="$(json_field "$d/Default/Preferences" email)"
+      if [ -s "$d/.account" ]; then
+        email="$(head -1 "$d/.account" | tr -d '[:space:]')"
+        who="(.account file)"
+      fi
+      port="$(printf '%s\n' "$sessions" | awk -v d="$d" '$2 == d { print $1; exit }')"
+      printf '%s\t%s\t%s\t%s\n' "${d##*/.chrome-debug-}" "${email:--}" "${who:--}" "${port:--}"
+    done
+  done < <(profile_roots)
+}
+
 # Percent-encode every byte except unreserved characters, so '#', '[', '?', '&'
 # and existing '%' survive being carried inside a /json/new?<url> request.
 urlencode() {
@@ -409,6 +457,33 @@ if [ "$ACTION" = "status" ]; then
     print_session_status "$PORT" ""
     exit $?
   fi
+fi
+
+# --- List Action -------------------------------------------------------------
+if [ "$ACTION" = "list" ]; then
+  rows="$(profile_rows)"
+  if [ -z "$rows" ]; then
+    echo "No debug profiles found (looked for ~/.chrome-debug-*)."
+    exit 0
+  fi
+  printf '%s\n' "$rows" | sort | awk -F'\t' '
+    { name[NR] = ($1 == "'"$DEFAULT_PORT"'") ? $1 " (default)" : $1; email[NR] = $2; who[NR] = $3; port[NR] = $4
+      if (length(name[NR]) > w1) w1 = length(name[NR])
+      e = ($2 == "-") ? "unknown" : $2; if (length(e) > w2) w2 = length(e)
+      if ($2 == "-") unknown = unknown " " $1; else users[$2] = users[$2] " " $1; n[$2]++ }
+    END {
+      printf "%-" w1 "s  %-" w2 "s  %-22s  %s\n", "PROFILE", "ACCOUNT", "NAME", "STATUS"
+      for (i = 1; i <= NR; i++) {
+        e = (email[i] == "-") ? "unknown" : email[i]
+        s = (port[i] == "-") ? "○ stopped" : "● port " port[i]
+        printf "%-" w1 "s  %-" w2 "s  %-22s  %s\n", name[i], e, (who[i] == "-" ? "" : who[i]), s
+      }
+      for (e in n) if (e != "-" && n[e] > 1)
+        printf "\n⚠ %s is signed in to %d profiles:%s - reuse one instead of adding another\n", e, n[e], users[e]
+      if (unknown != "")
+        printf "\n? No account found for:%s (not signed in to Chrome). Label it with:\n    echo you@gmail.com > ~/.chrome-debug-<name>/.account\n", unknown
+    }'
+  exit 0
 fi
 
 # --- Stop Action --------------------------------------------------------------
