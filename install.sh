@@ -437,6 +437,12 @@ install_deps() {
         ;;
       pwinstall:*)
         section "${D_ID[$i]}"
+        # The playwright row can read as present through another python3 (e.g. mise's), which
+        # skips its pip step; the browser install and its check use the venv, so make sure it has playwright.
+        if ensure_venv && ! "$VENV_DIR/bin/python" -c 'import playwright' >/dev/null 2>&1; then
+          info "$ $VENV_DIR/bin/pip install playwright"
+          "$VENV_DIR/bin/pip" install playwright && link_venv_site || warn "playwright install into $VENV_DIR reported an error"
+        fi
         if [ -x "$VENV_DIR/bin/python" ]; then
           # Linux/WSL also need Chromium's system libraries; --with-deps fetches them via sudo apt.
           pw_flags=""
