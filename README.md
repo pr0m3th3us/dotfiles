@@ -15,12 +15,16 @@ A modular, cross-platform dotfile repository using **GNU Stow** for configuratio
 ├── scripts/
 │   └── codex-config.sh         # Seeds ~/.codex/config.toml (status line, trust, fallback files)
 ├── agent-skills/               # Canonical source for AI Agent Skills
+│   ├── remind/
+│   │   ├── SKILL.md
+│   │   └── scripts/            # remind.mjs: reminders/<ID>.md in each repo, mirrored to Google Tasks and Calendar
 │   └── runbook/
 │       ├── SKILL.md
 │       ├── agents/             # subagents: claude/ and agy/ (one file each, linked as files)
 │       └── scripts/            # build/verify a checklist; runbook.mjs draws the board
 └── common/                     # Stowed package linked directly to $HOME
     ├── .local/bin/runbook      # `runbook list`: board of a repo's runbooks (runs runbook.mjs)
+    ├── .local/bin/remind       # `remind list | show <ID> | auth`: a repo's reminders (runs remind.mjs)
     ├── .local/bin/chrome-debug # `chrome-debug` / `cdebug`: start or attach to Chrome with remote debugging (mac, Linux, WSL)
     ├── .config/
     │   └── oh-my-posh/         # OMP themes (system/claude/agy) + claude-statusline.sh

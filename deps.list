@@ -56,6 +56,7 @@ antigravity  | optional | cmd:agy,antigravity | cask:antigravity-cli | - | manua
 codex        | optional | cmd:codex      | - | - | sh:d=$(mktemp -d) && trap 'rm -rf "$d"' EXIT && curl -fsSL -o "$d/i.sh" https://chatgpt.com/codex/install.sh && CODEX_NON_INTERACTIVE=1 sh "$d/i.sh" | scripts/codex-config.sh, install.sh (Codex config, global instructions)
 
 # --- Agent skills -------------------------------------------------------------
+node         | optional | cmd:node        | brew:node   | apt:nodejs  | - | agent-skills/runbook/scripts/runbook.mjs, common/.local/bin/runbook, agent-skills/remind/scripts/remind.mjs, common/.local/bin/remind (Node 18+)
 python3      | optional | cmd:python3     | brew:python | apt:python3 | - | agent-skills/runbook/scripts/ (build_runbook.py; runbook.mjs tick rebuilds through it), fabo repo scripts/setup-python.sh (3.10+ for its .venv: pymupdf, matplotlib; outside this repo)
 python3-venv@unix | optional | py:ensurepip | - | apt:python3-venv | - | install.sh (builds the agent-skills venv), fabo repo scripts/setup-python.sh (builds its .venv; outside this repo)
 playwright   | optional | py:playwright | - | - | pip:playwright | agent-skills/runbook/scripts/verify_runbook.py, build_runbook.py --pdf, agent-skills/visual/scripts/visual.py

@@ -1,0 +1,12 @@
+#!/bin/sh
+# remind: the remind skill's helper (agent-skills/remind/scripts/remind.mjs) as a command, runnable
+# from any git repo: `remind list` shows the repo's open reminders. It follows symlinks, so the
+# copy stow links into ~/.local/bin still finds this repo.
+src=$0
+while [ -L "$src" ]; do
+  dir=$(cd "$(dirname "$src")" && pwd)
+  src=$(readlink "$src")
+  case $src in /*) ;; *) src=$dir/$src ;; esac
+done
+here=$(cd "$(dirname "$src")" && pwd)
+exec node "$here/../../../agent-skills/remind/scripts/remind.mjs" "$@"
