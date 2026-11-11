@@ -27,7 +27,7 @@ STOW_CONTAINERS=".config .local .local/share .local/bin"
 # skill; a machine without the kits dir simply skips it.
 SKILL_ROOTS=".claude/skills .gemini/config/skills .agents/skills .codex/skills"
 
-# Subagents ride with their skill: agent-skills/<skill>/agents/<tool>/<name>.md is linked as
+# Subagents ride with their skill: <skill>/agents/<tool>/<name>.md is linked as
 # a file into that tool's agents folder. The two tools' formats differ, so each has a subfolder.
 AGENT_ROOTS="claude:.claude/agents agy:.gemini/config/agents"
 KNO_HUB_KITS_DIR="${KNO_HUB_KITS_DIR:-$HOME/projects/kno-hub/kits}"
@@ -38,7 +38,7 @@ KNO_HUB_KITS_DIR="${KNO_HUB_KITS_DIR:-$HOME/projects/kno-hub/kits}"
 # Rows use pwbrowser:/pip:/pwinstall:.
 VENV_DIR="${AGENT_VENV:-$HOME/.venvs/agent-skills}"
 
-# kno-hub's commands (sdoc, pin) are launchers in its bin/.
+# kno-hub's commands (sdoc, pin, runbook) are launchers in its bin/.
 # Each executable there is linked into ~/.local/bin (a name starting with _ is a
 # helper, not a command); a machine without kno-hub simply skips it.
 KNO_HUB_BIN_DIR="${KNO_HUB_BIN_DIR:-$HOME/projects/kno-hub/bin}"

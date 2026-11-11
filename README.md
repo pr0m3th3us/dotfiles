@@ -15,15 +15,9 @@ A modular, cross-platform dotfile repository using **GNU Stow** for configuratio
 ├── scripts/
 │   └── codex-config.sh         # Seeds ~/.codex/config.toml (status line, trust, fallback files)
 ├── agent-skills/               # Canonical source for AI Agent Skills
-│   ├── remind/
-│   │   ├── SKILL.md
-│   │   └── scripts/            # remind.mjs: reminders/<ID>.md in each repo, mirrored to Google Tasks and Calendar
-│   └── runbook/
-│       ├── SKILL.md
-│       ├── agents/             # subagents: claude/ and agy/ (one file each, linked as files)
-│       └── scripts/            # build/verify a checklist; runbook.mjs draws the board
+│   ├── remind/                 # Reminders mirrored to Google Tasks and Calendar
+│   └── visual/                 # Illustrated HTML and printable explainers
 └── common/                     # Stowed package linked directly to $HOME
-    ├── .local/bin/runbook      # `runbook list`: board of a repo's runbooks (runs runbook.mjs)
     ├── .local/bin/remind       # `remind list | show <ID> | auth`: a repo's reminders (runs remind.mjs)
     ├── .local/bin/chrome-debug # `chrome-debug` / `cdebug`: start or attach to Chrome with remote debugging (mac, Linux, WSL)
     ├── .config/
@@ -109,7 +103,7 @@ Every `skills` folder is a real directory holding one symlink per skill. `instal
 1. `agent-skills/` in this repo.
 2. kno-hub's `kits/`, only on a machine where kno-hub is cloned (default `~/projects/kno-hub/kits`; set `KNO_HUB_KITS_DIR` to change it). A machine without kno-hub skips this silently. If a name exists in both places, `agent-skills/` wins and the installer warns.
 
-A skill may carry subagents too: `agent-skills/<skill>/agents/claude/<name>.md` is linked into `~/.claude/agents/` and `agent-skills/<skill>/agents/agy/<name>.md` into `~/.gemini/config/agents/`, one file link each (the two tools use different frontmatter, hence a folder per tool). The runbook skill's `runbook-step-runner` is the first. Claude Code reads agent files at session start, so start a new session after adding one.
+The installer also links `agents/claude/<name>.md` and `agents/agy/<name>.md` from each skill folder into the corresponding agent's directory. The runbook skill and its step runners come from `kits/runbook/` in kno-hub. Start a new agent session after relinking to load the new definitions.
 
 **Benefit**: Editing a skill's files is instantly shared across all tools and tracked in Git, because the links point at the repo. **Adding or removing a skill folder needs `./install.sh` to be re-run**; a link whose skill was removed is reported as dangling and left for you to delete. Claude Code keeps its own `synced/` cache inside `~/.claude/skills`, which is outside this repo.
 
@@ -123,7 +117,9 @@ Starts Chrome with remote debugging (defaults to port 9222) and an isolated prof
 
 ### kno-hub commands in `~/.local/bin`
 
-`install.sh` also links kno-hub's commands, `sdoc` (the doc command: check, lint, reword, approve, upgrade and more) and `pin` (the ideaboard helper), into `~/.local/bin`, so they run from any repo. The earlier `doc-lint`, `doc-reword` and `doc-approve` commands no longer exist; delete any links to them left in `~/.local/bin` from an earlier run. Each is an executable in kno-hub's `bin/` (default `~/projects/kno-hub/bin`; set `KNO_HUB_BIN_DIR` to change it); a name starting with `_` is a helper and is not linked. Like the kits, this only happens on a machine where kno-hub is cloned and is skipped silently elsewhere. An existing file of the same name is marked `!` and moved to the backup folder, never deleted. The commands need Node 22 or newer (`node` in `deps.list`, optional). Adding a command to kno-hub's `bin/` needs `./install.sh` to be re-run.
+`install.sh` also links kno-hub's commands, `sdoc` (the doc command: check, lint, reword, approve, upgrade and more), `pin` (the ideaboard helper), and `runbook` (the runbook board and checklist helper), into `~/.local/bin`, so they run from any repo. The earlier `doc-lint`, `doc-reword` and `doc-approve` commands no longer exist; delete any links to them left in `~/.local/bin` from an earlier run. Each is an executable in kno-hub's `bin/` (default `~/projects/kno-hub/bin`; set `KNO_HUB_BIN_DIR` to change it); a name starting with `_` is a helper and is not linked. Like the kits, this only happens on a machine where kno-hub is cloned and is skipped silently elsewhere. An existing file of the same name is marked `!` and moved to the backup folder, never deleted. The commands need Node 22 or newer (`node` in `deps.list`, optional). Adding a command to kno-hub's `bin/` needs `./install.sh` to be re-run.
+
+For the runbook migration, update both checkouts before rerunning `./install.sh`. The installer offers to back up the old runbook links and put the kno-hub links in their place. Runbook requires a local kno-hub checkout.
 
 ---
 
