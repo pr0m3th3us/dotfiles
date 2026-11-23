@@ -13,7 +13,9 @@ A modular, cross-platform dotfile repository using **GNU Stow** for configuratio
 ├── AGENTS.md                   # Rules for AI agents (CLAUDE.md / GEMINI.md point here)
 ├── README.md                   # Documentation
 ├── scripts/
-│   └── codex-config.sh         # Seeds ~/.codex/config.toml (status line, trust, fallback files)
+│   ├── codex-config.sh         # Seeds ~/.codex/config.toml (status line, trust, fallback files)
+│   ├── terminal-profile.sh     # macOS: gives the current user the shared Terminal.app profile (run once per account)
+│   └── terminal/               # `Dotfiles Dark.terminal`, the importable profile it applies
 ├── agent-skills/               # Canonical source for AI Agent Skills
 │   ├── remind/                 # Reminders mirrored to Google Tasks and Calendar
 │   └── visual/                 # Illustrated HTML and printable explainers
@@ -75,6 +77,17 @@ The prompt and agent status lines need a Nerd Font. Either of these works; the i
 * **GoogleSansCode Nerd Font Mono** (`oh-my-posh font install GoogleSansCode`)
 
 Always pick the **Mono** variant (shown as `… NFM` in font pickers). The plain `NF` variant draws icons wider than one cell and `NFP` (Propo) is proportional; both make powerline caps and icons misalign, most visibly in macOS Terminal.app. Mono keeps icons small but aligned.
+
+### Same Terminal look on every macOS account
+
+Terminal.app keeps its profiles and fonts per user, so two accounts on one Mac can look different even with identical dotfiles. `scripts/terminal-profile.sh` imports the `Dotfiles Dark` profile (`scripts/terminal/Dotfiles Dark.terminal`: Google Sans Code NF SemiBold 14, 120×30, one set of colors, spacing and anti-aliasing) and makes it the default for new windows. `./install.sh` does this for you on macOS (it shows the plan and asks first, and installs the font if missing), so on a new account `git pull && ./install.sh` is enough. To run it by hand:
+
+```sh
+scripts/terminal-profile.sh --check     # read-only: font, profile, current default
+scripts/terminal-profile.sh             # apply; backs up Terminal prefs to ~/.dotfiles_backup_<timestamp>/
+```
+
+It refuses to run if the font is missing, and it never deletes a profile, so you can switch back in Terminal > Settings > Profiles. The profile mirrors the author's working setup, which uses the `NFP` font variant; it is not the Mono advice above, so icons may sit slightly off in a few themes. To change the shared look, adjust a profile in Terminal, then Profiles > ⋯ > Export, rename it to `Dotfiles Dark`, and replace the `.terminal` file.
 
 ### What GNU Stow does with existing files
 

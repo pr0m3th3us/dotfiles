@@ -38,6 +38,7 @@ zsh          | required | cmd:zsh        | brew:zsh   | apt:zsh   | -  | common/
 oh-my-posh   | required | cmd:oh-my-posh | brew:jandedobbeleer/oh-my-posh/oh-my-posh | - | sh:d=$(mktemp -d) && trap 'rm -rf "$d"' EXIT && curl -fsSL -o "$d/i.sh" https://ohmyposh.dev/install.sh && bash "$d/i.sh" -d ~/.local/bin | common/.zsh/50-prompt.zsh, common/.config/oh-my-posh/
 # Either font works; terminals must use the Mono (NFM) variant, see README.
 nerd-font    | required | font:CaskaydiaCove,GoogleSansCode | - | - | nerdfont:CascadiaCode | common/.config/oh-my-posh/*.json (glyphs)
+terminal-font@mac | optional | font:GoogleSansCode | - | - | nerdfont:GoogleSansCode | scripts/terminal-profile.sh (the shared Terminal.app profile uses Google Sans Code)
 
 fzf                     | optional | cmd:fzf          | brew:fzf     | apt:fzf      | - | common/.zsh/20-completion.zsh
 zoxide                  | optional | cmd:zoxide       | brew:zoxide  | apt:zoxide   | - | common/.zsh/00-env.zsh

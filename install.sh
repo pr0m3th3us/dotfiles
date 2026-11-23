@@ -3,7 +3,8 @@
 # Dotfiles installer (macOS, Linux, WSL)
 #
 #   ./install.sh           dependency check -> consent -> install ->
-#                          link check -> consent -> stow -> agent wiring
+#                          link check -> consent -> stow -> agent wiring ->
+#                          Codex config -> Terminal.app profile (macOS)
 #   ./install.sh --check   read-only report; exit 1 if a required dep is missing
 #   ./install.sh --yes     answer yes to every prompt (installs all missing deps)
 #
@@ -53,6 +54,10 @@ GLOBAL_INSTRUCTION_TARGETS="claude:.claude/CLAUDE.md codex:.codex/AGENTS.md"
 # Codex CLI keeps its settings in ~/.codex/config.toml, which it rewrites itself, so
 # the defaults are seeded by a script instead of being linked (see the script header).
 CODEX_CONFIG_SCRIPT="$DOTFILES_DIR/scripts/codex-config.sh"
+
+# macOS Terminal.app profiles are per user, so every account gets the same look from one
+# shared profile, imported by this script (see its header).
+TERMINAL_PROFILE_SCRIPT="$DOTFILES_DIR/scripts/terminal-profile.sh"
 
 MODE="install"
 ASSUME_YES=0
@@ -843,6 +848,45 @@ apply_codex() {
   BACKUP_DIR="$BACKUP_DIR" "$CODEX_CONFIG_SCRIPT" --apply >/dev/null && info "  updated ~/.codex/config.toml" || warn "Could not update ~/.codex/config.toml"
 }
 
+# --- Terminal.app profile (macOS) -----------------------------------------------
+TERMINAL_STATE="" TERMINAL_DIFF="" # state: ok | change | skip:<reason>
+
+plan_terminal() {
+  local rc
+  TERMINAL_DIFF=""
+  if [ "$OS" != "mac" ]; then
+    TERMINAL_STATE="skip:macOS only"
+  elif [ ! -x "$TERMINAL_PROFILE_SCRIPT" ]; then
+    TERMINAL_STATE="skip:$TERMINAL_PROFILE_SCRIPT is missing"
+  else
+    TERMINAL_DIFF="$("$TERMINAL_PROFILE_SCRIPT" --check)"
+    rc=$?
+    case "$rc" in
+      0) TERMINAL_STATE="ok" ;;
+      10) TERMINAL_STATE="change" ;;
+      11) TERMINAL_STATE="skip:Google Sans Code font is not installed yet" ;;
+      *) TERMINAL_STATE="skip:$TERMINAL_PROFILE_SCRIPT failed" ;;
+    esac
+  fi
+}
+
+terminal_report() {
+  [ "$OS" = "mac" ] || return 0
+  section "Terminal.app profile"
+  case "$TERMINAL_STATE" in
+    ok) printf '  %s✔%s Terminal.app already uses the shared "Dotfiles Dark" profile\n' "$C_GREEN" "$C_RESET" ;;
+    change)
+      printf '  %s~%s Terminal.app: import the shared "Dotfiles Dark" profile and make it the default (nothing is deleted)\n' "$C_BLUE" "$C_RESET"
+      printf '%s\n' "$TERMINAL_DIFF" | sed 's/^/      /'
+      ;;
+    skip:*) printf '  %s-%s Terminal.app profile %s(%s)%s\n' "$C_DIM" "$C_RESET" "$C_DIM" "${TERMINAL_STATE#skip:}" "$C_RESET" ;;
+  esac
+}
+
+apply_terminal() {
+  BACKUP_DIR="$BACKUP_DIR" "$TERMINAL_PROFILE_SCRIPT" || warn "Could not apply the Terminal.app profile"
+}
+
 # ==============================================================================
 detect_platform
 load_deps
@@ -852,6 +896,8 @@ plan_wiring
 wiring_report
 plan_codex
 codex_report
+plan_terminal
+terminal_report
 
 if [ "$MODE" = "check" ]; then
   section "Summary (read-only check, nothing was changed)"
@@ -903,6 +949,7 @@ else
   link_preflight
   plan_wiring
   plan_codex
+  plan_terminal # the font may have just been installed
 fi
 
 # --- 2. Links -------------------------------------------------------------------
@@ -949,6 +996,14 @@ if [ "$CODEX_STATE" = "change" ]; then
     *) info "Skipped Codex config." ;;
   esac
 fi
+if [ "$TERMINAL_STATE" = "change" ]; then
+  echo
+  ask "Import the shared Terminal.app profile and make it the default as shown above? Prefs are backed up first. [y/N]:" y
+  case "$REPLY_VALUE" in
+    y | Y | yes) apply_terminal ;;
+    *) info "Skipped Terminal.app profile." ;;
+  esac
+fi
 
 # --- Summary --------------------------------------------------------------------
 section "Done"
@@ -956,7 +1011,7 @@ section "Done"
 info "Manual follow-ups, if not done already:"
 case "$OS" in
   wsl) info "  - Windows Terminal: Settings > Defaults > Appearance > Font face = a Nerd Font Mono (below)" ;;
-  mac) info "  - Terminal/iTerm2: set the font to a Nerd Font Mono (below)" ;;
+  mac) info "  - Terminal.app is handled by scripts/terminal-profile.sh; iTerm2 or others: set the font to a Nerd Font Mono (below)" ;;
   linux) info "  - Terminal emulator: set the font to a Nerd Font Mono (below)" ;;
 esac
 info "      CaskaydiaCove Nerd Font Mono or GoogleSansCode Nerd Font Mono (listed as ... NFM)."
