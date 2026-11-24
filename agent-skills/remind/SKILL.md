@@ -57,6 +57,11 @@ repo. `remind help` lists the commands; `show` resolves an ID from any repo on t
   goes in that list and the list's id is saved as `google_list` in the reminder file; if the list does not
   exist, the helper warns and uses the default list. Reminders already pushed stay in the list they are in.
   Without the key, nothing changes. Create the list in Google Tasks first.
+- **Time lives on Calendar, not in Tasks.** The Google Tasks API stores only a date (it drops any time of
+  day), so a Task can never show a time. The time is the Calendar event, with alerts 30 minutes before and
+  at the start. Tell the user this when they give a time.
+- **Moving a Task by hand** to another list in Google Tasks is fine: the next `push` or `sync` finds it by
+  its `[<ID>]` title and re-points the reminder.
 - Each repo gets a fixed ID code on first use, kept in `reminders/config.json`; edit it there before the
   first reminder if the initials are unclear.
 - Leave new and changed reminder files uncommitted unless the user asks for a commit.
