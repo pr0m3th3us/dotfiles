@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// remind 0.1.0
+// remind 0.2.0
 // Helper for the /remind skill: keeps a repo's reminders in reminders/<ID>.md and mirrors each one to
 // the user's Google Tasks (always) and Google Calendar (when it has a time).
 // Plain Node 22+, no dependencies. Procedures live in ../SKILL.md.
@@ -78,6 +78,21 @@ function repoCode(root) {
   if (repos[code] !== root) { repos[code] = root; mkdirSync(CONF, { recursive: true, mode: 0o700 }); writeFileSync(REPOS, JSON.stringify(repos, null, 2) + '\n') }
   return code
 }
+
+/**
+ * The Google Tasks list for a NEW task: reminders/config.json "list" (a list title, e.g. "MAAC") when
+ * that list exists in the user's account, else the default list. Existing reminders keep the list
+ * recorded in their `google_list` (or the default list for ones pushed before this existed).
+ */
+async function pickList(root) {
+  const want = readJson(join(root, 'reminders', 'config.json'), {}).list
+  if (!want) return '@default'
+  const lists = (await api('GET', `${TASKS}/users/@me/lists?maxResults=100`))?.items || []
+  const hit = lists.find((l) => l.title.trim().toLowerCase() === String(want).trim().toLowerCase())
+  if (!hit) console.error(`warning: Google Tasks list "${want}" not found; using the default list`)
+  return hit ? hit.id : '@default'
+}
+const listOf = (fm) => fm.google_list || '@default'
 
 /** Finds a repo on this machine whose reminders/config.json has this code, and registers it. */
 function discover(code) {
@@ -293,9 +308,9 @@ async function push(id, args) {
   const title = `[${fm.id}] ${fm.title} · ${fm.host}`
   const done = []
   const task = { title, notes, due: `${fm.due}T00:00:00.000Z` }
-  const existing = fm.google_task && (await api('GET', `${TASKS}/lists/@default/tasks/${fm.google_task}`))
-  if (existing && !existing.deleted) { await api('PATCH', `${TASKS}/lists/@default/tasks/${fm.google_task}`, task); done.push('task updated') }
-  else { fm.google_task = (await api('POST', `${TASKS}/lists/@default/tasks`, task)).id; persist(file, doc); done.push('task created') }
+  const existing = fm.google_task && (await api('GET', `${TASKS}/lists/${listOf(fm)}/tasks/${fm.google_task}`))
+  if (existing && !existing.deleted) { await api('PATCH', `${TASKS}/lists/${listOf(fm)}/tasks/${fm.google_task}`, task); done.push('task updated') }
+  else { const list = await pickList(root); fm.google_task = (await api('POST', `${TASKS}/lists/${list}/tasks`, task)).id; fm.google_list = list; persist(file, doc); done.push('task created') }
 
   if (fm.time && !args['no-calendar']) {
     const start = new Date(`${fm.due}T${fm.time}:00`)
@@ -318,7 +333,7 @@ async function push(id, args) {
 
 async function liveState(fm) {
   if (!fm.google_task) return 'not pushed'
-  const t = await api('GET', `${TASKS}/lists/@default/tasks/${fm.google_task}`)
+  const t = await api('GET', `${TASKS}/lists/${listOf(fm)}/tasks/${fm.google_task}`)
   if (!t || t.deleted) return 'deleted in Google'
   return t.status === 'completed' ? 'completed in Google' : 'open in Google'
 }
@@ -352,8 +367,8 @@ async function close(id, status, args) {
   const doc = load(file)
   const { fm } = doc
   if (fm.google_task) {
-    if (status === 'DONE') await api('PATCH', `${TASKS}/lists/@default/tasks/${fm.google_task}`, { status: 'completed' })
-    else await api('DELETE', `${TASKS}/lists/@default/tasks/${fm.google_task}`)
+    if (status === 'DONE') await api('PATCH', `${TASKS}/lists/${listOf(fm)}/tasks/${fm.google_task}`, { status: 'completed' })
+    else await api('DELETE', `${TASKS}/lists/${listOf(fm)}/tasks/${fm.google_task}`)
   }
   if (fm.google_event && status === 'CANCELLED') await api('DELETE', `${CAL}/${fm.google_event}`)
   fm.status = status

@@ -52,6 +52,11 @@ repo. `remind help` lists the commands; `show` resolves an ID from any repo on t
 - An OAuth app left in "Testing" status loses its login after 7 days; the app must be published
   ("In production") in Google Cloud for reminders to keep working.
 - Google Keep has no API for personal Google accounts, so Tasks and Calendar are the targets.
+- **Project list.** A repo can send its reminders to its own Google Tasks list: add `"list": "<list title>"`
+  to `reminders/config.json` (for example `"list": "MAAC"`). Matching ignores case. A new reminder's Task
+  goes in that list and the list's id is saved as `google_list` in the reminder file; if the list does not
+  exist, the helper warns and uses the default list. Reminders already pushed stay in the list they are in.
+  Without the key, nothing changes. Create the list in Google Tasks first.
 - Each repo gets a fixed ID code on first use, kept in `reminders/config.json`; edit it there before the
   first reminder if the initials are unclear.
 - Leave new and changed reminder files uncommitted unless the user asks for a commit.
