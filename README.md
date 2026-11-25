@@ -12,6 +12,7 @@ A modular, cross-platform dotfile repository using **GNU Stow** for configuratio
 ├── deps.list                   # Single list of every dependency (read by install.sh)
 ├── AGENTS.md                   # Rules for AI agents (CLAUDE.md / GEMINI.md point here)
 ├── README.md                   # Documentation
+├── reviews/                    # Code reviews, one dated folder each: YYYY-MM-DD-<slug>/review.md
 ├── tests/
 │   └── chrome-debug/           # `run.sh`: regression tests for chrome-debug against a stand-in browser (Linux/WSL)
 ├── scripts/
