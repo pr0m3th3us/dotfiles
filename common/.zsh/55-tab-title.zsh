@@ -33,7 +33,10 @@
 [[ -o interactive ]] && [[ -t 1 ]] && [[ "$TERM" != "dumb" ]] || return 0
 
 _tab_title() {
-  print -Pn "\e]0;$1\a"
+  # Print the title text as-is (-r, no -P): a running command can contain
+  # `\e` or `%`, which would become real escape bytes, end the title early
+  # and leak onto the screen. Control bytes are stripped for the same reason.
+  print -rn -- $'\e]0;'"${1//[[:cntrl:]]/}"$'\a'
 }
 
 # Idle: show only the current leaf directory or '~'
