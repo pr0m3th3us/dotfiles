@@ -12,6 +12,8 @@ A modular, cross-platform dotfile repository using **GNU Stow** for configuratio
 ├── deps.list                   # Single list of every dependency (read by install.sh)
 ├── AGENTS.md                   # Rules for AI agents (CLAUDE.md / GEMINI.md point here)
 ├── README.md                   # Documentation
+├── tests/
+│   └── chrome-debug/           # `run.sh`: regression tests for chrome-debug against a stand-in browser (Linux/WSL)
 ├── scripts/
 │   ├── codex-config.sh         # Seeds ~/.codex/config.toml (status line, trust, fallback files)
 │   ├── terminal-profile.sh     # macOS: gives the current user the shared Terminal.app profile (run once per account)
@@ -126,7 +128,9 @@ Pramit's user-level rules live in kno-hub (private), not here: this repo is publ
 
 ### `chrome-debug` (alias `cdebug`)
 
-Starts Chrome with remote debugging (defaults to port 9222) and an isolated profile, or attaches to the session already running and opens the given URLs in it. Supports named profiles (e.g. `chrome-debug kalpchitra` -> `~/.chrome-debug-kalpchitracreations`, `chrome-debug dsn` -> `~/.chrome-debug-maacdsn`), automatic port allocation for concurrent profiles (assigns next free port >= 9222), `--status [profile]` (lists active sessions and open tabs), `--stop [profile]` and `--list` (existing profiles, the Google account each is signed in to, running or not, with a warning when two profiles share an account). Aliases: `cdebug`, `cdebug-kalpchitra` and `cdebug-dsn`. Works on macOS, Linux and WSL (uses Windows Chrome there). Under WSL2 NAT networking Windows Chrome is reachable from Windows only; for WSL-side tools set `networkingMode=mirrored` under `[wsl2]` in `%UserProfile%\.wslconfig` and run `wsl --shutdown`. Chrome is an optional dependency in `deps.list`.
+Starts Chrome with remote debugging (defaults to port 9222) and an isolated profile, or attaches to the session already running and opens the given URLs in it. Supports named profiles (e.g. `chrome-debug kalpchitra`, `chrome-debug dsn`), automatic port allocation for concurrent profiles (assigns next free port >= 9222), `--status [profile]` (lists active sessions and open tabs), `--stop [profile]` and `--list` (existing profiles, the Google account each is signed in to, running or not, with a warning when two profiles share an account). Profiles are stored under `~/.chrome-debug-<profile>` on macOS/Linux and `%USERPROFILE%\.chrome-debug-<profile>` when using Windows Chrome on WSL (reusing an existing `~/.chrome-debug-<profile>` if present; pass `-d <path>` if both exist). Aliases: `cdebug`, `cdebug-kalpchitra` and `cdebug-dsn`. Works on macOS, Linux and WSL (uses Windows Chrome there). Under WSL2 NAT networking Windows Chrome is reachable from Windows only; for WSL-side tools set `networkingMode=mirrored` under `[wsl2]` in `%UserProfile%\.wslconfig` and run `wsl --shutdown`. Chrome and `ss` (`iproute2` on Linux/WSL) are optional dependencies in `deps.list`.
+
+A session counts as a profile's only when the process listening on its port is that profile's browser: `--status`, `--list` and attaching to a running profile check the listener's PID (`/proc` on Linux, `Get-NetTCPConnection` for Windows Chrome, `lsof` on macOS) and refuse to show tabs or open one otherwise. `--stop` signals only processes whose real executable is Chrome or Chromium. Launches are serialized per user through a lock in `$TMPDIR`; one that cannot get the lock within 40 seconds (`CHROME_DEBUG_LOCK_WAIT`) exits without starting anything. Set `CHROME_DEBUG_CHROME` to use a specific browser binary, for example Linux Chromium under WSL. Run `tests/chrome-debug/run.sh` after changing the launcher: it drives the real script against a stand-in browser on Linux or WSL (about 30 seconds; needs `python3`).
 
 ### kno-hub commands in `~/.local/bin`
 

@@ -31,7 +31,7 @@
 git          | required | cmd:git        | brew:git   | apt:git   | -  | install.sh
 stow         | required | cmd:stow       | brew:stow  | apt:stow  | -  | install.sh, common/.zsh/45-functions.zsh (restow)
 curl         | required | cmd:curl       | brew:curl  | apt:curl  | -  | install.sh (sh: installers), common/.local/bin/chrome-debug
-jq           | required | cmd:jq         | brew:jq    | apt:jq    | -  | common/.config/oh-my-posh/claude-statusline.sh, install.sh (settings wiring), common/.local/bin/chrome-debug (status tab list)
+jq           | required | cmd:jq         | brew:jq    | apt:jq    | -  | common/.config/oh-my-posh/claude-statusline.sh, install.sh (settings wiring), common/.local/bin/chrome-debug (status tab list, account metadata)
 
 # --- Shell --------------------------------------------------------------------
 zsh          | required | cmd:zsh        | brew:zsh   | apt:zsh   | -  | common/.zshrc, common/.zsh/
@@ -48,6 +48,7 @@ zsh-syntax-highlighting | optional | file:/usr/share/zsh-syntax-highlighting/zsh
 bat                     | optional | cmd:batcat,bat   | brew:bat     | apt:bat      | - | common/.zsh/40-aliases.zsh
 fd                      | optional | cmd:fdfind,fd    | brew:fd      | apt:fd-find  | - | common/.zsh/40-aliases.zsh
 xclip@unix              | optional | cmd:xclip        | -            | apt:xclip    | - | common/.zsh/os/wsl.zsh
+ss@unix                 | optional | cmd:ss           | -            | apt:iproute2 | - | common/.local/bin/chrome-debug (listener port scan)
 chrome                  | optional | file:/Applications/Google Chrome.app,~/Applications/Google Chrome.app,/Applications/Chromium.app,/mnt/c/Program Files/Google/Chrome/Application/chrome.exe,/mnt/c/Program Files (x86)/Google/Chrome/Application/chrome.exe,/usr/bin/google-chrome,/usr/bin/google-chrome-stable,/usr/bin/chromium,/usr/bin/chromium-browser | cask:google-chrome | - | manual:Install Google Chrome from https://www.google.com/chrome/ | common/.local/bin/chrome-debug
 rclone                  | optional | cmd:rclone       | brew:rclone  | -            | sh:d=$(mktemp -d) && trap 'rm -rf "$d"' EXIT && curl -fsSL -o "$d/i.sh" https://rclone.org/install.sh && sudo bash "$d/i.sh" | kno-hub:bin/rclone-sync (copy-only Drive sync for every hustle repo; fabo and maac-digital-ops call it)
 
@@ -58,7 +59,7 @@ codex        | optional | cmd:codex      | - | - | sh:d=$(mktemp -d) && trap 'rm
 
 # --- Agent skills -------------------------------------------------------------
 node         | optional | cmd:node        | brew:node   | apt:nodejs  | - | agent-skills/remind/scripts/remind.mjs, common/.local/bin/remind (Node 18+), kno-hub:bin/runbook and other kno-hub commands (Node 22+)
-python3      | optional | cmd:python3     | brew:python | apt:python3 | - | kno-hub:bin/rclone-sync (3.12+ to pull MAAC run archives), kno-hub:kits/runbook/scripts/ (build_runbook.py; runbook.mjs tick rebuilds through it), fabo repo scripts/setup-python.sh (3.10+ for its .venv: pymupdf, matplotlib; outside this repo)
+python3      | optional | cmd:python3     | brew:python | apt:python3 | - | tests/chrome-debug/run.sh (stand-in browser for the chrome-debug regression tests), kno-hub:bin/rclone-sync (3.12+ to pull MAAC run archives), kno-hub:kits/runbook/scripts/ (build_runbook.py; runbook.mjs tick rebuilds through it), fabo repo scripts/setup-python.sh (3.10+ for its .venv: pymupdf, matplotlib; outside this repo)
 python3-venv@unix | optional | py:ensurepip | - | apt:python3-venv | - | install.sh (builds the agent-skills venv), fabo repo scripts/setup-python.sh (builds its .venv; outside this repo)
 playwright   | optional | py:playwright | - | - | pip:playwright | kno-hub:kits/runbook/scripts/verify_runbook.py and build_runbook.py --pdf, agent-skills/visual/scripts/visual.py
 chromium     | optional | pwbrowser:chromium | - | - | pwinstall:chromium | kno-hub:kits/runbook/scripts/verify_runbook.py and build_runbook.py --pdf, agent-skills/visual/scripts/visual.py (browser playwright drives)

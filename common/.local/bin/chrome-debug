@@ -7,7 +7,6 @@
 #   --remote-debugging-port=<port>   enables DevTools Protocol over HTTP/WebSocket
 #   --user-data-dir=<dir>            isolated profile (required so Chrome doesn't
 #                                    attach to an existing normal instance)
-#   --remote-allow-origins=*         allows CDP / MCP servers across host & WSL
 #   --no-first-run                   skips initial setup wizards
 #   --no-default-browser-check       skips prompt to become default browser
 # ==============================================================================
@@ -33,6 +32,14 @@ is_mac() {
   [ "$(uname -s)" = "Darwin" ]
 }
 
+local_host_name() {
+  if is_mac; then
+    printf 'mac'
+  else
+    printf 'linux'
+  fi
+}
+
 usage() {
   cat <<EOF
 Usage: chrome-debug [options] [profile] [url ...]
@@ -43,7 +50,9 @@ when running multiple distinct profiles.
 
 Arguments:
   [profile]               Profile name (e.g. kalpchitra, dsn, work).
-                          Maps to ~/.chrome-debug-<profile>.
+                          Maps to ~/.chrome-debug-<profile> on macOS/Linux, or
+                          %USERPROFILE%\.chrome-debug-<profile> for Windows Chrome
+                          on WSL (existing ~/.chrome-debug-<profile> is reused).
   [url ...]               One or more URLs to open in the session.
 
 Options:
@@ -57,9 +66,9 @@ Options:
   -h, --help              Show this help message
 
 Examples:
-  chrome-debug                           # default debug session on port 9222 (~/.chrome-debug-9222)
-  chrome-debug kalpchitra                # launches/attaches ~/.chrome-debug-kalpchitracreations (auto-port >= 9222)
-  chrome-debug dsn                       # launches/attaches ~/.chrome-debug-maacdsn
+  chrome-debug                           # default debug session on port 9222 (.chrome-debug-9222)
+  chrome-debug kalpchitra                # launches/attaches .chrome-debug-kalpchitracreations (auto-port >= 9222)
+  chrome-debug dsn                       # launches/attaches .chrome-debug-maacdsn
   chrome-debug kalpchitra https://ads.google.com
   chrome-debug --status
   chrome-debug --status kalpchitra
@@ -67,7 +76,12 @@ Examples:
   chrome-debug --list                    # check here before creating a new profile
 
 An account is read from the profile's Chrome sign-in. If a profile is not signed
-in to Chrome, label it by hand:  echo you@gmail.com > ~/.chrome-debug-<name>/.account
+in to Chrome, label it by hand:  echo you@gmail.com > "<profile-dir>/.account"
+
+Environment:
+  CHROME_DEBUG_CHROME     Browser binary to use instead of the detected one (e.g. Linux
+                          Chromium under WSL, or Chrome for Testing)
+  CHROME_DEBUG_LOCK_WAIT  Seconds to wait for another launch to finish (default: 40)
 EOF
   exit 0
 }
@@ -109,6 +123,61 @@ normalize_profile() {
       ;;
   esac
   printf '%s' "$p"
+}
+
+# Canonicalize a filesystem path (resolving ~, relative segments, and symlinks)
+# even when the final leaf directory does not exist yet.
+canonical_path() {
+  local p="$1"
+  [ -z "$p" ] && return 0
+  p="${p/#\~/$HOME}"
+  if is_wsl && [[ "$p" == [A-Za-z]:* || "$p" == \\\\* ]] && command -v wslpath >/dev/null 2>&1; then
+    p="$(wslpath -u "$p" 2>/dev/null || printf '%s' "$p")"
+  fi
+  case "$p" in
+    /*) ;;
+    *) p="$PWD/$p" ;;
+  esac
+
+  # Resolve the leading components that exist in filesystem order: the kernel follows
+  # each symlink before applying a later "..", so "link/../x" means the link target's
+  # parent, not the caller's directory. Only the missing suffix is normalized lexically.
+  local -a parts=() tail=()
+  local IFS='/' seg exist="" i=0
+  read -r -a parts <<< "$p"
+  while [ "$i" -lt "${#parts[@]}" ]; do
+    seg="${parts[$i]}"
+    if [ -n "$seg" ]; then
+      [ -d "${exist}/${seg}" ] || break
+      exist="${exist}/${seg}"
+    fi
+    i=$((i + 1))
+  done
+
+  local base
+  base="$(cd -P "${exist:-/}" 2>/dev/null && pwd -P)" || base="${exist:-/}"
+  [ "$base" = "/" ] && base=""
+  while [ "$i" -lt "${#parts[@]}" ]; do
+    seg="${parts[$i]}"
+    i=$((i + 1))
+    case "$seg" in
+      ""|".") ;;
+      "..")
+        if [ ${#tail[@]} -gt 0 ]; then
+          unset 'tail[${#tail[@]}-1]'
+        else
+          base="${base%/*}"
+        fi
+        ;;
+      *) tail+=("$seg") ;;
+    esac
+  done
+
+  local out="$base"
+  for seg in ${tail[@]+"${tail[@]}"}; do
+    out+="/$seg"
+  done
+  printf '%s\n' "${out:-/}"
 }
 
 # --- Parse arguments ----------------------------------------------------------
@@ -166,443 +235,25 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# The port ends up in command lines and process matching, so it must be a plain number.
+# Validate port before shell arithmetic so oversized inputs never overflow 64-bit bash ints.
 case "$PORT" in
   ''|*[!0-9]*) echo "Error: invalid port '${PORT}' (expected 1-65535)" >&2; exit 1 ;;
 esac
-if [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then
+port_stripped="${PORT#"${PORT%%[!0]*}"}"
+if [ -z "$port_stripped" ] || [ "${#port_stripped}" -gt 5 ] || [ "$port_stripped" -lt 1 ] || [ "$port_stripped" -gt 65535 ]; then
   echo "Error: invalid port '${PORT}' (expected 1-65535)" >&2
   exit 1
 fi
-PORT=$((10#$PORT))
+PORT="$port_stripped"
 
-# Resolve profile directory if specified
-if [ -n "$PROFILE_ARG" ]; then
-  PROFILE_NAME="$(normalize_profile "$PROFILE_ARG")"
-  if [[ "$PROFILE_ARG" == /* ]] || [[ "$PROFILE_ARG" == ~* ]] || [[ "$PROFILE_ARG" == ./* ]] || [[ "$PROFILE_ARG" == ..* ]] || { is_wsl && [[ "$PROFILE_ARG" == *:* ]]; }; then
-    USER_DATA_DIR="${PROFILE_ARG/#\~/$HOME}"
-  else
-    USER_DATA_DIR="$HOME/.chrome-debug-${PROFILE_NAME}"
-  fi
-fi
-
-# --- CDP transport ------------------------------------------------------------
-# cdp <METHOD> <path> [port] prints the response body.
-# Exit: 0 ok, 7 nothing listening, anything else = a listener that did not answer
-# like DevTools (HTTP error, timeout).
-cdp_direct() {
-  local method="$1" path="$2" p="${3:-$PORT}"
-  curl -sS --fail --globoff -m 3 -X "$method" "http://127.0.0.1:${p}${path}" 2>/dev/null
-}
-
-cdp() {
-  local method="$1" path="$2" p="${3:-$PORT}"
-  local out rc=0
-  out="$(cdp_direct "$method" "$path" "$p")" || rc=$?
-  if [ "$rc" -eq 0 ]; then
-    printf '%s\n' "$out"
-    return 0
-  fi
-  if [ "$rc" -eq 7 ] && is_wsl && command -v powershell.exe >/dev/null 2>&1; then
-    out="$(powershell.exe -NoProfile -Command "try { (Invoke-WebRequest -UseBasicParsing -TimeoutSec 3 -Method $method -Uri 'http://127.0.0.1:${p}${path}').Content } catch { exit 1 }" 2>/dev/null | tr -d '\r')" || true
-    if [ -n "$out" ]; then
-      printf '%s\n' "$out"
-      return 0
-    fi
-  fi
-  return "$rc"
-}
-
-# probe [port]: 0 = DevTools endpoint answering, 1 = nothing listening, 2 = port taken by something else.
-# Sets VERSION_JSON on success.
-probe() {
-  local p="${1:-$PORT}"
-  local rc=0
-  VERSION_JSON="$(cdp GET /json/version "$p")" || rc=$?
-  if [ "$rc" -eq 0 ]; then
-    case "$VERSION_JSON" in
-      *webSocketDebuggerUrl*) return 0 ;;
-      *) return 2 ;;
-    esac
-  fi
-  [ "$rc" -eq 7 ] && return 1
-  return 2
-}
-
-port_conflict() {
-  echo "Error: port ${PORT} is in use by something that is not Chrome DevTools." >&2
-  echo "  Pick another port: chrome-debug -p <port>" >&2
-  exit 1
-}
-
-# WSL2 NAT: Windows Chrome only listens on Windows loopback, so Linux tools cannot reach it.
-nat_note() {
-  if is_wsl && ! cdp_direct GET /json/version >/dev/null; then
-    echo "  Note: reachable from Windows only, not from inside WSL (WSL2 NAT networking)." >&2
-    echo "        For WSL-side tools (MCP, puppeteer), set networkingMode=mirrored under [wsl2]" >&2
-    echo "        in %UserProfile%\\.wslconfig, then run 'wsl --shutdown'." >&2
-  fi
-}
-
-# Check if anything is listening on a TCP port
-is_port_listening() {
-  local p="$1"
-  if is_mac; then
-    lsof -iTCP:"${p}" -sTCP:LISTEN -P -n >/dev/null 2>&1 && return 0
-  fi
-  if is_wsl && command -v powershell.exe >/dev/null 2>&1; then
-    local ps_check
-    ps_check="$(powershell.exe -NoProfile -Command "if (Get-NetTCPConnection -LocalPort ${p} -State Listen -ErrorAction SilentlyContinue) { echo 1 }" 2>/dev/null | tr -d '\r')" || true
-    [ "$ps_check" = "1" ] && return 0
-  fi
-  if command -v ss >/dev/null 2>&1; then
-    ss -tlnH sport = :"$p" 2>/dev/null | grep -q ":$p" && return 0
-  fi
-  local rc=0
-  probe "$p" >/dev/null 2>&1 || rc=$?
-  [ "$rc" -ne 1 ] && return 0
-  return 1
-}
-
-# Scan from base port upwards to find the next free port
-find_next_free_port() {
-  local base="${1:-$DEFAULT_PORT}"
-  local candidate="$base"
-  local max=$((base + 50))
-  while [ "$candidate" -le "$max" ]; do
-    if ! is_port_listening "$candidate"; then
-      printf '%s\n' "$candidate"
-      return 0
-    fi
-    candidate=$((candidate + 1))
-  done
-  echo "Error: no free port found between ${base} and ${max}" >&2
-  return 1
-}
-
-# Find if a Chrome process is already running with the given user-data-dir
-find_running_port_for_profile() {
-  local dir="$1"
-  [ -z "$dir" ] && return 1
-  dir="${dir/#\~/$HOME}"
-  local p
-  p="$(ps -axo command= 2>/dev/null \
-    | awk -v dir="$dir" '
-        tolower($0) ~ /chrom/ && index($0, "--user-data-dir=" dir) {
-          for (i = 1; i <= NF; i++) {
-            if ($i ~ /^--remote-debugging-port=[0-9]+$/) {
-              split($i, a, "=")
-              print a[2]
-              exit
-            }
-          }
-        }')"
-  if [ -n "$p" ]; then
-    printf '%s\n' "$p"
-    return 0
-  fi
-  if is_wsl && command -v powershell.exe >/dev/null 2>&1; then
-    p="$(powershell.exe -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name = 'chrome.exe'\" | Where-Object { \$_.CommandLine -like '*--user-data-dir=*' } | ForEach-Object { if (\$_.CommandLine -match '--remote-debugging-port=(\d+)') { \$Matches[1]; break } }" 2>/dev/null | tr -d '\r')" || true
-    if [ -n "$p" ]; then
-      printf '%s\n' "$p"
-      return 0
-    fi
-  fi
-  return 1
-}
-
-# List all active Chrome debug sessions across ports
-list_all_sessions() {
-  ps -axo command= 2>/dev/null \
-    | awk '
-        tolower($0) ~ /chrom/ && /--remote-debugging-port=/ && !/Helper/ {
-          port = ""; dir = "";
-          for (i = 1; i <= NF; i++) {
-            if ($i ~ /^--remote-debugging-port=[0-9]+$/) {
-              split($i, a, "="); port = a[2];
-            }
-            if ($i ~ /^--user-data-dir=/) {
-              split($i, a, "="); dir = a[2];
-            }
-          }
-          if (port != "" && !seen[port]++) {
-            print port " " dir;
-          }
-        }' | sort -n
-}
-
-# Value of the first non-empty "key":"value" in a Chrome JSON file (no jq needed).
-json_field() {
-  grep -o "\"$2\":\"[^\"]*\"" "$1" 2>/dev/null | grep -v '":""$' | head -1 | cut -d'"' -f4 || true
-}
-
-# Directories that may hold .chrome-debug-* profiles: $HOME, plus the Windows
-# profile on WSL (Windows Chrome keeps its unnamed profiles there).
-profile_roots() {
-  printf '%s\n' "$HOME"
-  if is_wsl && command -v cmd.exe >/dev/null 2>&1 && command -v wslpath >/dev/null 2>&1; then
-    local win
-    win="$(cd /mnt/c 2>/dev/null && cmd.exe /c 'echo %USERPROFILE%' </dev/null 2>/dev/null | tr -d '\r')" || true
-    [ -n "$win" ] && wslpath -u "$win" 2>/dev/null || true
-  fi
-}
-
-# One tab-separated row per profile: name, account email, account name, port ("-" if stopped).
-# The account comes from the Chrome sign-in; a .account file in the profile overrides it.
-profile_rows() {
-  local sessions root d email who port
-  sessions="$(list_all_sessions || true)"
-  while read -r root; do
-    for d in "$root"/.chrome-debug-*; do
-      [ -d "$d" ] || continue
-      email="$(json_field "$d/Local State" user_name)"
-      who="$(json_field "$d/Local State" gaia_name)"
-      [ -n "$email" ] || email="$(json_field "$d/Default/Preferences" email)"
-      if [ -s "$d/.account" ]; then
-        email="$(head -1 "$d/.account" | tr -d '[:space:]')"
-        who="(.account file)"
-      fi
-      port="$(printf '%s\n' "$sessions" | awk -v d="$d" '$2 == d { print $1; exit }')"
-      printf '%s\t%s\t%s\t%s\n' "${d##*/.chrome-debug-}" "${email:--}" "${who:--}" "${port:--}"
-    done
-  done < <(profile_roots)
-}
-
-# Percent-encode every byte except unreserved characters, so '#', '[', '?', '&'
-# and existing '%' survive being carried inside a /json/new?<url> request.
-urlencode() {
-  local LC_ALL=C s="$1" i c out=""
-  for ((i = 0; i < ${#s}; i++)); do
-    c="${s:i:1}"
-    case "$c" in
-      [a-zA-Z0-9._~-]) out+="$c" ;;
-      *) out+="$(printf '%%%02X' "'$c")" ;;
-    esac
-  done
-  printf '%s' "$out"
-}
-
-# Give scheme-less input a scheme: localhost/loopback get http, the rest https.
-normalize_url() {
-  case "$1" in
-    *://*|about:*|chrome:*|data:*|file:*) printf '%s' "$1" ;;
-    localhost*|127.0.0.1*|\[::1\]*) printf 'http://%s' "$1" ;;
-    *) printf 'https://%s' "$1" ;;
-  esac
-}
-
-# Print status of a session on a given port
-print_session_status() {
-  local p="$1" custom_dir="$2"
-  local rc=0
-  probe "$p" || rc=$?
-  if [ "$rc" -eq 2 ]; then
-    echo "✖ Port ${p} is in use, but not by Chrome DevTools"
-    return 2
-  elif [ "$rc" -eq 1 ]; then
-    echo "○ No Chrome debug session active on port ${p}"
-    return 1
-  fi
-  local browser ws tabs
-  browser="$(printf '%s\n' "$VERSION_JSON" | grep -o '"Browser": *"[^"]*"' | head -1 | cut -d'"' -f4)"
-  ws="$(printf '%s\n' "$VERSION_JSON" | grep -o '"webSocketDebuggerUrl": *"[^"]*"' | head -1 | cut -d'"' -f4)"
-  echo "● Chrome debug session is ACTIVE on port ${p}"
-  if [ -n "$custom_dir" ]; then
-    echo "  Profile:   ${custom_dir}"
-  fi
-  echo "  Browser:   ${browser:-Chrome}"
-  echo "  Endpoint:  http://127.0.0.1:${p}"
-  echo "  WebSocket: ${ws}"
-  tabs="$(cdp GET /json/list "$p" || true)"
-  if [ -n "$tabs" ]; then
-    echo "  Open tabs:"
-    if command -v jq >/dev/null 2>&1; then
-      printf '%s\n' "$tabs" | jq -r '.[] | select(.type=="page") | "    - \(.title) [\(.url)]"'
-    else
-      printf '%s\n' "$tabs" | grep -E '"title"|"url"' | sed 's/^[[:space:]]*//' | paste - - | sed 's/^/    - /'
-    fi
-  fi
-  nat_note
-  return 0
-}
-
-# --- Status Action ------------------------------------------------------------
-if [ "$ACTION" = "status" ]; then
-  if [ "$PORT_SPECIFIED" -eq 1 ]; then
-    print_session_status "$PORT" "$USER_DATA_DIR"
-    exit $?
-  fi
-  if [ "$CUSTOM_PROFILE" -eq 1 ]; then
-    found_port="$(find_running_port_for_profile "$USER_DATA_DIR" || true)"
-    if [ -n "$found_port" ]; then
-      print_session_status "$found_port" "$USER_DATA_DIR"
-      exit $?
-    else
-      echo "○ No Chrome debug session active for profile '${PROFILE_NAME}' (${USER_DATA_DIR})"
-      exit 1
-    fi
-  fi
-
-  sessions="$(list_all_sessions || true)"
-  if [ -n "$sessions" ]; then
-    first=1
-    while read -r p dir; do
-      [ -z "$p" ] && continue
-      [ "$first" -eq 0 ] && echo ""
-      first=0
-      print_session_status "$p" "$dir" || true
-    done <<< "$sessions"
-    exit 0
-  else
-    print_session_status "$PORT" ""
-    exit $?
-  fi
-fi
-
-# --- List Action -------------------------------------------------------------
-if [ "$ACTION" = "list" ]; then
-  rows="$(profile_rows)"
-  if [ -z "$rows" ]; then
-    echo "No debug profiles found (looked for ~/.chrome-debug-*)."
-    exit 0
-  fi
-  printf '%s\n' "$rows" | sort | awk -F'\t' '
-    { name[NR] = ($1 == "'"$DEFAULT_PORT"'") ? $1 " (default)" : $1; email[NR] = $2; who[NR] = $3; port[NR] = $4
-      if (length(name[NR]) > w1) w1 = length(name[NR])
-      e = ($2 == "-") ? "unknown" : $2; if (length(e) > w2) w2 = length(e)
-      if ($2 == "-") unknown = unknown " " $1; else users[$2] = users[$2] " " $1; n[$2]++ }
-    END {
-      printf "%-" w1 "s  %-" w2 "s  %-22s  %s\n", "PROFILE", "ACCOUNT", "NAME", "STATUS"
-      for (i = 1; i <= NR; i++) {
-        e = (email[i] == "-") ? "unknown" : email[i]
-        s = (port[i] == "-") ? "○ stopped" : "● port " port[i]
-        printf "%-" w1 "s  %-" w2 "s  %-22s  %s\n", name[i], e, (who[i] == "-" ? "" : who[i]), s
-      }
-      for (e in n) if (e != "-" && n[e] > 1)
-        printf "\n⚠ %s is signed in to %d profiles:%s - reuse one instead of adding another\n", e, n[e], users[e]
-      if (unknown != "")
-        printf "\n? No account found for:%s (not signed in to Chrome). Label it with:\n    echo you@gmail.com > ~/.chrome-debug-<name>/.account\n", unknown
-    }'
-  exit 0
-fi
-
-# --- Stop Action --------------------------------------------------------------
-stop_session_on_port() {
-  local p="$1" desc="$2"
-  local was_up=0 rc=0
-  probe "$p" || rc=$?
-  [ "$rc" -eq 0 ] && was_up=1
-  local arg_re="(^|[[:space:]])--remote-debugging-port=${p}([[:space:]]|\$)"
-  local pids
-  pids="$(ps -axo pid=,command= 2>/dev/null \
-    | awk -v re="$arg_re" -v self="$$" '$0 ~ re && tolower($0) ~ /chrom/ && $1 != self { print $1 }')"
-  if [ -n "$pids" ]; then
-    # shellcheck disable=SC2086
-    kill $pids 2>/dev/null || true
-  fi
-  if is_wsl && command -v powershell.exe >/dev/null 2>&1; then
-    powershell.exe -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name = 'chrome.exe'\" | Where-Object { \$_.CommandLine -match '(^|\s)(\x22)?--remote-debugging-port=${p}(\s|\x22|\$)' } | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }" >/dev/null 2>&1 || true
-  fi
-
-  for _ in 1 2 3 4 5 6; do
-    sleep 0.5
-    rc=0; probe "$p" || rc=$?
-    [ "$rc" -ne 0 ] && break
-  done
-  if [ "$rc" -eq 0 ]; then
-    echo "⚠ Could not stop Chrome on port ${p} (still answering)." >&2
-    return 1
-  fi
-  local label="port ${p}"
-  [ -n "$desc" ] && label="port ${p} (${desc})"
-  if [ -n "$pids" ] || [ "$was_up" -eq 1 ]; then
-    echo "✔ Stopped Chrome debug session on ${label}"
-  else
-    echo "○ No Chrome debug session was running on ${label}"
-  fi
-  return 0
-}
-
-if [ "$ACTION" = "stop" ]; then
-  if [ "$PORT_SPECIFIED" -eq 1 ]; then
-    stop_session_on_port "$PORT" "$USER_DATA_DIR"
-    exit $?
-  fi
-  if [ "$CUSTOM_PROFILE" -eq 1 ]; then
-    found_port="$(find_running_port_for_profile "$USER_DATA_DIR" || true)"
-    if [ -n "$found_port" ]; then
-      stop_session_on_port "$found_port" "$USER_DATA_DIR"
-      exit $?
-    else
-      echo "○ No Chrome debug session was running for profile '${PROFILE_NAME}' (${USER_DATA_DIR})"
-      exit 0
-    fi
-  fi
-  stop_session_on_port "$PORT" ""
-  exit $?
-fi
-
-# --- Open tabs in a session that is already running ---------------------------
-open_tab() {
-  local url resp
-  url="$(normalize_url "$1")"
-  if resp="$(cdp PUT "/json/new?$(urlencode "$url")" "$PORT")" && printf '%s' "$resp" | grep -q '"id"'; then
-    echo "  Opening tab: $url"
-  else
-    echo "Error: could not open tab: $url" >&2
-    return 1
-  fi
-}
-
-# --- Resolve Port for Launch / Attach -----------------------------------------
-if [ "$PORT_SPECIFIED" -eq 0 ]; then
-  if [ "$CUSTOM_PROFILE" -eq 1 ]; then
-    existing_port="$(find_running_port_for_profile "$USER_DATA_DIR" || true)"
-    if [ -n "$existing_port" ]; then
-      rc=0; probe "$existing_port" || rc=$?
-      if [ "$rc" -eq 0 ]; then
-        PORT="$existing_port"
-      else
-        PORT="$(find_next_free_port "$DEFAULT_PORT")"
-      fi
-    else
-      PORT="$(find_next_free_port "$DEFAULT_PORT")"
-    fi
-  else
-    rc=0; probe "$PORT" || rc=$?
-    if [ "$rc" -eq 2 ]; then
-      PORT="$(find_next_free_port "$((DEFAULT_PORT + 1))")"
-    fi
-  fi
-fi
-
-rc=0; probe "$PORT" || rc=$?
-if [ "$rc" -eq 2 ]; then
-  port_conflict
-elif [ "$rc" -eq 0 ]; then
-  echo "Chrome is already running in debug mode on port ${PORT}."
-  if [ -n "$USER_DATA_DIR" ]; then
-    echo "  Profile:  ${USER_DATA_DIR}"
-  fi
-  if [ ${#TARGET_URLS[@]} -gt 0 ]; then
-    FAILED=0
-    for url in "${TARGET_URLS[@]}"; do
-      open_tab "$url" || FAILED=1
-    done
-    exit "$FAILED"
-  fi
-  echo "  DevTools: http://127.0.0.1:${PORT}"
-  if [ -n "$PROFILE_NAME" ]; then
-    echo "  To open a page: chrome-debug ${PROFILE_NAME} <url>"
-  else
-    echo "  To open a page: chrome-debug <url>"
-  fi
-  nat_note
-  exit 0
-fi
-
-# --- Locate Chrome Binary -----------------------------------------------------
+# --- Locate Chrome Binary & Profile Root -------------------------------------
 find_chrome() {
+  if [ -n "${CHROME_DEBUG_CHROME:-}" ]; then
+    [ -x "$CHROME_DEBUG_CHROME" ] || return 1
+    printf '%s\n' "$CHROME_DEBUG_CHROME"
+    return 0
+  fi
+
   if is_mac; then
     for p in \
       "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
@@ -628,7 +279,7 @@ find_chrome() {
 
     # Per-user install under %LOCALAPPDATA%
     local localappdata
-    localappdata="$(cd /mnt/c 2>/dev/null && cmd.exe /c 'echo %LOCALAPPDATA%' </dev/null 2>/dev/null | tr -d '\r')"
+    localappdata="$(cd /mnt/c 2>/dev/null && cmd.exe /c 'echo %LOCALAPPDATA%' </dev/null 2>/dev/null | tr -d '\r')" || true
     if [ -n "$localappdata" ] && command -v wslpath >/dev/null 2>&1; then
       local user_chrome
       user_chrome="$(wslpath -u "$localappdata" 2>/dev/null)/Google/Chrome/Application/chrome.exe"
@@ -655,10 +306,1310 @@ find_chrome() {
   return 1
 }
 
+WIN_USERPROFILE_RESOLVED=0
+WIN_USERPROFILE_WIN=""
+WIN_USERPROFILE_WSL=""
+
+resolve_win_userprofile() {
+  [ "$WIN_USERPROFILE_RESOLVED" -eq 1 ] && return 0
+  WIN_USERPROFILE_RESOLVED=1
+  if is_wsl && command -v cmd.exe >/dev/null 2>&1 && command -v wslpath >/dev/null 2>&1; then
+    WIN_USERPROFILE_WIN="$(cd /mnt/c 2>/dev/null && cmd.exe /c 'echo %USERPROFILE%' </dev/null 2>/dev/null | tr -d '\r')" || true
+    if [ -n "$WIN_USERPROFILE_WIN" ] && [[ "$WIN_USERPROFILE_WIN" != *"%"* ]]; then
+      WIN_USERPROFILE_WSL="$(wslpath -u "$WIN_USERPROFILE_WIN" 2>/dev/null || true)"
+      [ -n "$WIN_USERPROFILE_WSL" ] && WIN_USERPROFILE_WSL="$(canonical_path "$WIN_USERPROFILE_WSL")"
+    else
+      WIN_USERPROFILE_WIN=""
+    fi
+  fi
+}
+
 CHROME_BIN="$(find_chrome || true)"
+
+default_profile_root() {
+  if is_wsl && [[ "$CHROME_BIN" == *".exe" ]]; then
+    resolve_win_userprofile
+    if [ -n "$WIN_USERPROFILE_WSL" ]; then
+      printf '%s\n' "$WIN_USERPROFILE_WSL"
+      return 0
+    fi
+  fi
+  canonical_path "$HOME"
+}
+
+launch_host() {
+  if is_wsl && [[ "$CHROME_BIN" == *".exe" ]]; then
+    printf 'windows'
+  else
+    local_host_name
+  fi
+}
+
+# Resolve profile directory if specified
+if [ -n "$PROFILE_ARG" ]; then
+  PROFILE_NAME="$(normalize_profile "$PROFILE_ARG")"
+  if [[ "$PROFILE_ARG" == /* ]] || [[ "$PROFILE_ARG" == ~* ]] || [[ "$PROFILE_ARG" == ./* ]] || [[ "$PROFILE_ARG" == ..* ]] || [[ "$PROFILE_ARG" == */* ]]; then
+    USER_DATA_DIR="$(canonical_path "$PROFILE_ARG")"
+  elif is_wsl && [[ "$PROFILE_ARG" == *:* || "$PROFILE_ARG" == \\\\* ]]; then
+    USER_DATA_DIR="$(canonical_path "$PROFILE_ARG")"
+  else
+    resolve_win_userprofile
+    home_prof="$(canonical_path "$HOME/.chrome-debug-${PROFILE_NAME}")"
+    win_prof=""
+    if [ -n "$WIN_USERPROFILE_WSL" ]; then
+      win_prof="$(canonical_path "$WIN_USERPROFILE_WSL/.chrome-debug-${PROFILE_NAME}")"
+    fi
+    if [ -n "$win_prof" ] && [ "$win_prof" != "$home_prof" ]; then
+      if [ -d "$win_prof" ] && [ -d "$home_prof" ]; then
+        echo "Error: profile name '${PROFILE_NAME}' is ambiguous (exists under both roots):" >&2
+        echo "  $win_prof" >&2
+        echo "  $home_prof" >&2
+        echo "Specify an explicit directory: chrome-debug -d <path>" >&2
+        exit 1
+      elif [ -d "$home_prof" ]; then
+        USER_DATA_DIR="$home_prof"
+      elif [ -d "$win_prof" ]; then
+        USER_DATA_DIR="$win_prof"
+      else
+        USER_DATA_DIR="$(canonical_path "$(default_profile_root)/.chrome-debug-${PROFILE_NAME}")"
+      fi
+    else
+      USER_DATA_DIR="$home_prof"
+    fi
+  fi
+fi
+
+# --- CDP transport ------------------------------------------------------------
+# cdp <METHOD> <path> [port] [host] prints the response body.
+# host: auto (default) | linux | mac | windows
+# Exit: 0 ok, 7 nothing listening, anything else = a listener that did not answer
+# like DevTools (HTTP error, timeout).
+cdp_direct() {
+  local method="$1" path="$2" p="${3:-$PORT}"
+  curl -sS --fail --globoff --connect-timeout 1 -m 3 -X "$method" "http://127.0.0.1:${p}${path}" 2>/dev/null
+}
+
+cdp_win() {
+  local method="$1" path="$2" p="${3:-$PORT}"
+  command -v powershell.exe >/dev/null 2>&1 || return 7
+  local ps_out ps_rc=0
+  ps_out="$(powershell.exe -NoProfile -Command "
+    if (-not (Get-NetTCPConnection -LocalPort ${p} -State Listen -ErrorAction SilentlyContinue)) { exit 7 }
+    try { (Invoke-WebRequest -UseBasicParsing -TimeoutSec 3 -Method $method -Uri 'http://127.0.0.1:${p}${path}').Content }
+    catch { exit 2 }
+  " 2>/dev/null | tr -d '\r')" || ps_rc=$?
+  if [ "$ps_rc" -eq 0 ] && [ -n "$ps_out" ]; then
+    printf '%s\n' "$ps_out"
+    return 0
+  fi
+  [ "$ps_rc" -eq 7 ] && return 7
+  return 2
+}
+
+linux_port_has_listener() {
+  local p="$1"
+  if command -v ss >/dev/null 2>&1; then
+    local ss_out ss_rc=0
+    ss_out="$(ss -tlnH sport = :"$p" 2>/dev/null)" || ss_rc=$?
+    if [ "$ss_rc" -eq 0 ]; then
+      if printf '%s\n' "$ss_out" | grep -q ":$p"; then
+        return 0
+      fi
+      return 1
+    fi
+  fi
+  if [ -r /proc/net/tcp ]; then
+    local hex_port
+    hex_port="$(printf '%04X' "$p")"
+    if awk -v hp=":$hex_port" 'NR>1 && toupper($2) ~ hp"$" && toupper($4) == "0A" { found=1; exit } END { exit !found }' /proc/net/tcp /proc/net/tcp6 2>/dev/null; then
+      return 0
+    fi
+    return 1
+  fi
+  return 2
+}
+
+cdp() {
+  local method="$1" path="$2" p="${3:-$PORT}" host="${4:-auto}"
+  local out rc=0
+
+  if [ "$host" = "linux" ]; then
+    # Nothing in this kernel's socket table means nothing to talk to. Checking first also
+    # avoids WSL2 mirrored networking, where a connection to a closed port times out
+    # instead of being refused.
+    local llrc=0
+    linux_port_has_listener "$p" || llrc=$?
+    [ "$llrc" -eq 1 ] && return 7
+    cdp_direct "$method" "$path" "$p"
+    return $?
+  fi
+  if [ "$host" = "mac" ]; then
+    cdp_direct "$method" "$path" "$p"
+    return $?
+  fi
+
+  if [ "$host" = "windows" ]; then
+    if is_wsl; then
+      # Only try direct curl if ss cleanly confirms no Linux listener is occupying port p
+      # (fast path under WSL2 mirrored mode, without ever hitting a Linux browser in split mode).
+      local lrc=0
+      linux_port_has_listener "$p" || lrc=$?
+      if [ "$lrc" -eq 1 ]; then
+        out="$(cdp_direct "$method" "$path" "$p")" && { printf '%s\n' "$out"; return 0; }
+      fi
+      cdp_win "$method" "$path" "$p"
+      return $?
+    fi
+    return 7
+  fi
+
+  # host == auto
+  out="$(cdp_direct "$method" "$path" "$p")" || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    printf '%s\n' "$out"
+    return 0
+  fi
+  if is_wsl && { [ "$rc" -eq 7 ] || [ "$rc" -eq 28 ]; } && command -v powershell.exe >/dev/null 2>&1; then
+    local ps_rc=0
+    out="$(cdp_win "$method" "$path" "$p")" || ps_rc=$?
+    if [ "$ps_rc" -eq 0 ]; then
+      printf '%s\n' "$out"
+      return 0
+    fi
+    if [ "$ps_rc" -eq 7 ]; then
+      local lrc=0
+      linux_port_has_listener "$p" || lrc=$?
+      if [ "$lrc" -eq 1 ] || { [ "$lrc" -eq 2 ] && [ "$rc" -eq 7 ]; }; then
+        return 7
+      fi
+    fi
+    return 2
+  fi
+  if is_wsl && [ "$rc" -eq 28 ]; then
+    # No Windows tools to ask. Mirrored networking would have carried the request to a
+    # Windows listener, so a timeout with no Linux listener means the port is closed.
+    local lrc=0
+    linux_port_has_listener "$p" || lrc=$?
+    [ "$lrc" -eq 1 ] && return 7
+  fi
+  return "$rc"
+}
+
+# probe [port] [host]: 0 = DevTools endpoint answering, 1 = nothing listening, 2 = port taken/error.
+# Sets VERSION_JSON on success.
+probe() {
+  local p="${1:-$PORT}" host="${2:-auto}"
+  local rc=0
+  VERSION_JSON="$(cdp GET /json/version "$p" "$host")" || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    case "$VERSION_JSON" in
+      *webSocketDebuggerUrl*) return 0 ;;
+      *) return 2 ;;
+    esac
+  fi
+  [ "$rc" -eq 7 ] && return 1
+  return 2
+}
+
+port_conflict() {
+  echo "Error: port ${PORT} is in use by something that is not Chrome DevTools." >&2
+  echo "  Pick another port: chrome-debug -p <port>" >&2
+  exit 1
+}
+
+# WSL2 NAT: Windows Chrome only listens on Windows loopback, so Linux tools cannot reach it.
+nat_note() {
+  local p="${1:-$PORT}" host="${2:-auto}"
+  [ "$host" = "linux" ] && return 0
+  if is_wsl && ! cdp_direct GET /json/version "$p" >/dev/null; then
+    echo "  Note: reachable from Windows only, not from inside WSL (WSL2 NAT networking)." >&2
+    echo "        For WSL-side tools (MCP, puppeteer), set networkingMode=mirrored under [wsl2]" >&2
+    echo "        in %UserProfile%\\.wslconfig, then run 'wsl --shutdown'." >&2
+  fi
+}
+
+# List all listening TCP port numbers across the local host (and Windows on WSL).
+# Returns 0 only if every applicable inventory command ran and succeeded.
+list_listening_ports() {
+  local ok=0 out rc
+  if is_mac; then
+    if command -v lsof >/dev/null 2>&1; then
+      rc=0
+      out="$(lsof -iTCP -sTCP:LISTEN -P -n 2>/dev/null)" || rc=$?
+      if [ "$rc" -eq 0 ]; then
+        printf '%s\n' "$out" | awk 'NR>1 { sub(/.*:/, "", $9); print $9 }'
+      else
+        ok=1
+      fi
+    else
+      ok=1
+    fi
+    return "$ok"
+  fi
+  if command -v ss >/dev/null 2>&1; then
+    rc=0
+    out="$(ss -tlnH 2>/dev/null)" || rc=$?
+    if [ "$rc" -eq 0 ]; then
+      printf '%s\n' "$out" | awk '{ sub(/.*:/, "", $4); print $4 }'
+    else
+      ok=1
+    fi
+  else
+    ok=1
+  fi
+  if is_wsl; then
+    if command -v powershell.exe >/dev/null 2>&1; then
+      rc=0
+      out="$(powershell.exe -NoProfile -Command "Get-NetTCPConnection -State Listen -ErrorAction Stop | Select-Object -ExpandProperty LocalPort" 2>/dev/null | tr -d '\r')" || rc=$?
+      if [ "$rc" -eq 0 ]; then
+        printf '%s\n' "$out"
+      else
+        ok=1
+      fi
+    else
+      ok=1
+    fi
+  fi
+  return "$ok"
+}
+
+# Check if anything is listening on a TCP port across hosts
+is_port_listening() {
+  local p="$1"
+  if is_mac; then
+    if command -v lsof >/dev/null 2>&1; then
+      local lsof_rc=0
+      lsof -iTCP:"${p}" -sTCP:LISTEN -P -n >/dev/null 2>&1 || lsof_rc=$?
+      [ "$lsof_rc" -eq 0 ] && return 0
+    fi
+    local prc=0
+    probe "$p" mac >/dev/null 2>&1 || prc=$?
+    [ "$prc" -ne 1 ] && return 0
+    return 1
+  fi
+
+  local win_checked=0 linux_checked=0
+  if is_wsl && command -v powershell.exe >/dev/null 2>&1; then
+    local ps_check ps_rc=0
+    ps_check="$(powershell.exe -NoProfile -Command "if (Get-NetTCPConnection -LocalPort ${p} -State Listen -ErrorAction Stop) { echo 1 }" 2>/dev/null | tr -d '\r')" || ps_rc=$?
+    if [ "$ps_rc" -eq 0 ]; then
+      win_checked=1
+      [ "$ps_check" = "1" ] && return 0
+    fi
+  else
+    win_checked=1
+  fi
+
+  local lrc=0
+  linux_port_has_listener "$p" || lrc=$?
+  if [ "$lrc" -eq 0 ]; then
+    return 0
+  elif [ "$lrc" -eq 1 ]; then
+    linux_checked=1
+  fi
+
+  if [ "$win_checked" -eq 1 ] && [ "$linux_checked" -eq 1 ]; then
+    return 1
+  fi
+
+  local rc=0
+  probe "$p" auto >/dev/null 2>&1 || rc=$?
+  [ "$rc" -ne 1 ] && return 0
+  return 1
+}
+
+# Scan from base port upwards to find the next free port
+find_next_free_port() {
+  local base="${1:-$DEFAULT_PORT}"
+  local candidate="$base"
+  local max=$((base + 50))
+  local busy inv_rc=0 session_ports=""
+  busy="$(list_listening_ports)" || inv_rc=$?
+  session_ports="$(list_all_sessions 2>/dev/null | awk -F'\t' '$3 != "" { print $3 }' || true)"
+  busy="$(printf '%s\n%s\n' "$busy" "$session_ports" | grep -E '^[0-9]+$' | sort -un || true)"
+
+  while [ "$candidate" -le "$max" ]; do
+    if [ -n "$busy" ] && printf '%s\n' "$busy" | grep -qx "$candidate"; then
+      candidate=$((candidate + 1))
+      continue
+    fi
+    # Verify candidate directly if inventory had errors or to catch races.
+    if [ "$inv_rc" -ne 0 ]; then
+      if is_port_listening "$candidate"; then
+        candidate=$((candidate + 1))
+        continue
+      fi
+    fi
+    local prc=0
+    probe "$candidate" auto >/dev/null 2>&1 || prc=$?
+    if [ "$prc" -eq 1 ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+    candidate=$((candidate + 1))
+  done
+  echo "Error: no free port found between ${base} and ${max}" >&2
+  return 1
+}
+
+# Check if a local PID is currently alive (excluding zombies)
+pid_is_alive() {
+  local pid="$1"
+  [ -n "$pid" ] || return 1
+  if [ -r "/proc/$pid/stat" ]; then
+    local st
+    st="$(sed 's/.*) //' "/proc/$pid/stat" 2>/dev/null || true)"
+    case "$st" in
+      ""|Z*|X*) return 1 ;;
+      *) return 0 ;;
+    esac
+  fi
+  [ -d /proc ] && return 1
+  local out
+  out="$(ps -p "$pid" -o state= 2>/dev/null || true)"
+  case "$out" in
+    ""|Z*|X*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+# True if an executable's file name is a Chrome/Chromium browser binary. Exact names
+# only: a helper that merely ends in "-chrome" must never be treated as a browser.
+is_browser_exe_name() {
+  local rc=1
+  shopt -s nocasematch
+  case "$1" in
+    chrome|chromium|chromium-browser|chromium-freeworld|chrome-headless-shell|headless_shell|\
+    google-chrome|google-chrome-stable|google-chrome-beta|google-chrome-unstable|google-chrome-canary|\
+    "google chrome"|"google chrome for testing"|"google chrome beta"|"google chrome dev"|"google chrome canary")
+      rc=0 ;;
+  esac
+  shopt -u nocasematch
+  return "$rc"
+}
+
+# True if a local PID is running a real browser executable. Reads the kernel's record
+# of the executable (/proc/<pid>/exe on Linux), never the command-line text, which any
+# process can set to anything.
+local_pid_is_browser() {
+  local pid="$1" exe=""
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  if [ -d /proc/self ]; then
+    exe="$(readlink "/proc/$pid/exe" 2>/dev/null || true)"
+    exe="${exe% (deleted)}"
+  else
+    exe="$(ps -p "$pid" -o comm= 2>/dev/null || true)"
+  fi
+  [ -n "$exe" ] || return 1
+  is_browser_exe_name "${exe##*/}"
+}
+
+# Re-check a local PID right before signalling it: still a browser executable and still
+# started with --remote-debugging-port=<p> (guards against PID reuse since discovery).
+local_pid_matches_port() {
+  local pid="$1" p="$2" cmd=""
+  local_pid_is_browser "$pid" || return 1
+  if [ -r "/proc/$pid/cmdline" ]; then
+    cmd="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
+  else
+    cmd="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+  fi
+  case " $cmd " in
+    *" --remote-debugging-port=${p} "*) return 0 ;;
+  esac
+  return 1
+}
+
+# Browser processes on this machine (Linux or macOS) started with a debug port, one row
+# per browser instance (its top-level process): host<TAB>pid<TAB>port<TAB>dir
+list_local_sessions() {
+  local lhost wsl_flag=0
+  lhost="$(local_host_name)"
+  is_wsl && wsl_flag=1
+
+  ps -axo pid=,ppid=,state=,command= 2>/dev/null \
+    | awk -v is_wsl="$wsl_flag" -v self="$$" '
+          {
+            pid = $1; ppid = $2; st = $3
+            if (pid == self || pid !~ /^[0-9]+$/) next
+            if (st ~ /^[ZX]/) next
+            cmd = $0
+            sub(/^[[:space:]]*[0-9]+[[:space:]]+[0-9]+[[:space:]]+[^[:space:]]+[[:space:]]+/, "", cmd)
+            if (is_wsl == 1 && tolower(cmd) ~ /\.exe([[:space:]]|$)/) next
+            if (cmd ~ /(^|[[:space:]])--type=/ || cmd ~ /\/Contents\/Frameworks\//) next
+            if (!match(cmd, /(^|[[:space:]])--remote-debugging-port=[0-9]+([[:space:]]|$)/)) next
+            tok = substr(cmd, RSTART, RLENGTH)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", tok)
+            port = substr(tok, 25)
+            dir = ""
+            if (match(cmd, /(^|[[:space:]])--user-data-dir=/)) {
+              rest = substr(cmd, RSTART + RLENGTH)
+              if (substr(rest, 1, 1) == "\"") {
+                rest = substr(rest, 2)
+                if (match(rest, /"/)) dir = substr(rest, 1, RSTART - 1)
+                else dir = rest
+              } else if (substr(rest, 1, 1) == "\047") {
+                rest = substr(rest, 2)
+                if (match(rest, /\047/)) dir = substr(rest, 1, RSTART - 1)
+                else dir = rest
+              } else if (match(rest, /[[:space:]]+(--|(https?|about|chrome|file|data):)/)) {
+                dir = substr(rest, 1, RSTART - 1)
+              } else {
+                dir = rest
+              }
+            }
+            if (port != "") print pid "\t" ppid "\t" port "\t" dir
+          }' \
+    | while IFS=$'\t' read -r pid ppid port dir; do
+        local_pid_is_browser "$pid" || continue
+        [ -n "$dir" ] && dir="$(canonical_path "$dir")"
+        printf '%s\t%s\t%s\t%s\n' "$pid" "$ppid" "$port" "$dir"
+      done \
+    | awk -F'\t' -v host="$lhost" '
+        { n++; pids[n] = $1; ppids[n] = $2; ports[n] = $3; dirs[n] = $4; verified[$1] = 1 }
+        END {
+          for (i = 1; i <= n; i++)
+            if (!(ppids[i] in verified)) print host "\t" pids[i] "\t" ports[i] "\t" dirs[i]
+        }'
+}
+
+# Windows Chrome processes (WSL only) started with a debug port, one row per browser
+# instance: windows<TAB>pid<TAB>port<TAB>dir (dir converted to its WSL path).
+list_windows_sessions() {
+  is_wsl && command -v powershell.exe >/dev/null 2>&1 || return 0
+  local win_sessions host pid port dir
+  win_sessions="$(powershell.exe -NoProfile -Command "
+    \$procs = @(Get-CimInstance Win32_Process -Filter \"Name = 'chrome.exe'\" |
+      Where-Object {
+        \$_.CommandLine -match '(^|\s)(\x22)?--remote-debugging-port=(\d+)(\s|\x22|\$)' -and
+        \$_.CommandLine -notmatch '(^|\s)--type='
+      })
+    \$idSet = @{}
+    foreach (\$p in \$procs) { \$idSet[\$p.ProcessId] = \$true }
+    foreach (\$p in \$procs) {
+      if (\$idSet.ContainsKey(\$p.ParentProcessId)) { continue }
+      if (\$p.CommandLine -match '(^|\s)(\x22)?--remote-debugging-port=(\d+)(\s|\x22|\$)') {
+        \$port = \$Matches[3]
+        \$dir = ''
+        if (\$p.CommandLine -match '\x22--user-data-dir=([^\x22]+)\x22') { \$dir = \$Matches[1] }
+        elseif (\$p.CommandLine -match '--user-data-dir=\x22([^\x22]+)\x22') { \$dir = \$Matches[1] }
+        elseif (\$p.CommandLine -match '--user-data-dir=([^\s\x22]+)') { \$dir = \$Matches[1] }
+        \"windows\`t\$(\$p.ProcessId)\`t\$port\`t\$dir\"
+      }
+    }
+  " 2>/dev/null | tr -d '\r')" || true
+  while IFS=$'\t' read -r host pid port dir; do
+    [ -n "$port" ] || continue
+    [ -n "$dir" ] && dir="$(canonical_path "$dir")"
+    printf '%s\t%s\t%s\t%s\n' "$host" "$pid" "$port" "$dir"
+  done <<< "$win_sessions"
+}
+
+# All Chrome debug browser instances: host<TAB>pid<TAB>port<TAB>dir, sorted by port.
+# An optional host (linux|mac|windows) skips the other host's (slow) inventory.
+list_all_sessions() {
+  local only="${1:-auto}"
+  {
+    [ "$only" = "windows" ] || list_local_sessions
+    case "$only" in auto|windows) list_windows_sessions ;; esac
+  } | awk -F'\t' '$3 != "" && !seen[$1 SUBSEP $2 SUBSEP $3]++' | sort -t$'\t' -n -k3,3
+}
+
+# Find session rows (host<TAB>pid<TAB>port<TAB>dir) matching a user-data-dir
+find_sessions_for_profile() {
+  local dir
+  dir="$(canonical_path "$1")"
+  [ -z "$dir" ] && return 1
+  list_all_sessions "${2:-auto}" \
+    | awk -F'\t' -v d="$dir" '$4 == d { print }'
+}
+
+# Find session rows on a given port (optionally restricted to host)
+find_sessions_on_port() {
+  local p="$1" host_filter="${2:-auto}"
+  list_all_sessions "$host_filter" \
+    | awk -F'\t' -v p="$p" -v h="$host_filter" '
+        $3 == p && (h == "auto" || $1 == h) { print }'
+}
+
+# --- Endpoint ownership -------------------------------------------------------
+# Only one process can own a listening socket, so the listener's PID is the proof of
+# which browser (and therefore which profile) a DevTools endpoint belongs to. A command
+# line, a leftover port file or a still-running child is not.
+
+# Inodes of the LISTEN sockets on local TCP port p (IPv4 and IPv6).
+linux_listen_inodes() {
+  local hex
+  hex="$(printf '%04X' "$1")"
+  awk -v hp=":$hex" 'FNR > 1 && toupper($2) ~ hp"$" && toupper($4) == "0A" && $10 != "0" { print $10 }' \
+    /proc/net/tcp /proc/net/tcp6 2>/dev/null || true
+}
+
+# endpoint_owned_by <port> <host> <pid>...: does one of the PIDs own the listener?
+# 0 = yes; 2 = a listener exists but another process owns it;
+# 1 = nothing listening, or the owner could not be determined.
+endpoint_owned_by() {
+  local p="$1" host="$2" pid owners="" inodes fds inode
+  shift 2
+  [ "$#" -gt 0 ] || return 1
+  case "$host" in
+    windows)
+      is_wsl && command -v powershell.exe >/dev/null 2>&1 || return 1
+      owners="$(powershell.exe -NoProfile -Command "@(Get-NetTCPConnection -LocalPort ${p} -State Listen -ErrorAction SilentlyContinue) | ForEach-Object { \$_.OwningProcess }" 2>/dev/null | tr -d '\r' | grep -E '^[0-9]+$' || true)"
+      ;;
+    mac)
+      command -v lsof >/dev/null 2>&1 || return 1
+      owners="$(lsof -nP -iTCP:"$p" -sTCP:LISTEN -t 2>/dev/null || true)"
+      ;;
+    *)
+      [ -r /proc/net/tcp ] || return 1
+      inodes="$(linux_listen_inodes "$p")"
+      [ -n "$inodes" ] || return 1
+      for pid in "$@"; do
+        [[ "$pid" =~ ^[0-9]+$ ]] || continue
+        fds="$(ls -l "/proc/$pid/fd" 2>/dev/null || true)"
+        for inode in $inodes; do
+          case "$fds" in *"socket:[$inode]"*) return 0 ;; esac
+        done
+      done
+      return 2
+      ;;
+  esac
+  [ -n "$owners" ] || return 1
+  for pid in "$@"; do
+    printf '%s\n' "$owners" | grep -qx "$pid" && return 0
+  done
+  return 2
+}
+
+# Same check, for the browser(s) started for a profile directory on port/host.
+# Extra PIDs (e.g. the process this invocation just started) count as candidates too.
+endpoint_owned_by_profile() {
+  local p="$1" host="$2" dir="$3" pids
+  shift 3
+  pids="$(find_sessions_for_profile "$dir" "$host" | awk -F'\t' -v p="$p" -v h="$host" '$1 == h && $3 == p { print $2 }')"
+  # shellcheck disable=SC2086
+  endpoint_owned_by "$p" "$host" $pids "$@"
+}
+
+# Print a disambiguation error when a bare port matches multiple sessions
+fail_ambiguous_port() {
+  local p="$1" sessions="$2"
+  echo "Error: port ${p} is used by multiple Chrome debug sessions:" >&2
+  local h pid sp dir
+  while IFS=$'\t' read -r h pid sp dir; do
+    [ -z "$sp" ] && continue
+    echo "  [${h}] pid=${pid} port=${sp} profile=${dir:-<default>}" >&2
+  done <<< "$sessions"
+  echo "Specify a profile directory: chrome-debug -d <path>" >&2
+  exit 1
+}
+
+# Read account email & display name from a profile directory (.account overrides Chrome metadata)
+read_profile_account() {
+  local d="$1" email="" who=""
+  if [ -s "$d/.account" ]; then
+    email="$(head -1 "$d/.account" | tr -d '[:space:]')"
+    who="(.account file)"
+    printf '%s\t%s\n' "${email:--}" "$who"
+    return 0
+  fi
+  if command -v jq >/dev/null 2>&1; then
+    if [ -f "$d/Local State" ]; then
+      IFS=$'\t' read -r email who < <(
+        jq -r '
+          (
+            if (.profile?.info_cache? | type) == "object" then
+              (.profile.info_cache["Default"] // (.profile.info_cache | to_entries | map(.value) | first) // {})
+            else
+              ([.. | objects | select((.user_name? // "") != "" or (.gaia_name? // "") != "")] | first // {})
+            end
+          ) | [(.user_name // ""), (.gaia_name // "")]
+            | map(if . == "" then "-" else . end) | @tsv
+        ' "$d/Local State" 2>/dev/null || true
+      )
+      # Empty fields travel as "-": a tab is IFS whitespace, so read would collapse an
+      # empty email and shift the display name into its place.
+      [ "$email" = "-" ] && email=""
+      [ "$who" = "-" ] && who=""
+    fi
+    if [ -z "$email" ] && [ -f "$d/Default/Preferences" ]; then
+      email="$(
+        jq -r '
+          [
+            (.account_info[]?.email? // empty),
+            (.email? // empty),
+            (.. | objects | .email? // empty)
+          ] | map(select(. != "")) | first // ""
+        ' "$d/Default/Preferences" 2>/dev/null || true
+      )"
+    fi
+  else
+    if [ -f "$d/Local State" ]; then
+      email="$(grep -o '"user_name"[[:space:]]*:[[:space:]]*"[^"]*"' "$d/Local State" 2>/dev/null | grep -v '""$' | head -1 | sed 's/.*:[[:space:]]*"\([^"]*\)"/\1/' || true)"
+      who="$(grep -o '"gaia_name"[[:space:]]*:[[:space:]]*"[^"]*"' "$d/Local State" 2>/dev/null | grep -v '""$' | head -1 | sed 's/.*:[[:space:]]*"\([^"]*\)"/\1/' || true)"
+    fi
+    if [ -z "$email" ] && [ -f "$d/Default/Preferences" ]; then
+      email="$(grep -o '"email"[[:space:]]*:[[:space:]]*"[^"]*"' "$d/Default/Preferences" 2>/dev/null | grep -v '""$' | head -1 | sed 's/.*:[[:space:]]*"\([^"]*\)"/\1/' || true)"
+    fi
+  fi
+  printf '%s\t%s\n' "${email:--}" "${who:--}"
+}
+
+# Directories that may hold .chrome-debug-* profiles: $HOME, plus the Windows
+# profile on WSL (Windows Chrome keeps its debug profiles there).
+profile_roots() {
+  resolve_win_userprofile
+  if [ -n "$WIN_USERPROFILE_WSL" ] && [ "$WIN_USERPROFILE_WSL" != "$(canonical_path "$HOME")" ]; then
+    printf '%s\n' "$WIN_USERPROFILE_WSL"
+  fi
+  canonical_path "$HOME"
+}
+
+# Health of a running profile's endpoint, checked on that browser's own host:
+# "● port N" only when the endpoint answers and its listener is that browser.
+session_state_label() {
+  local p="$1" host="$2" pid="$3" rc=0 orc=0
+  probe "$p" "$host" >/dev/null 2>&1 || rc=$?
+  if [ "$rc" -eq 1 ]; then
+    printf '◌ port %s (starting or not answering)' "$p"
+    return 0
+  elif [ "$rc" -ne 0 ]; then
+    printf '✖ port %s (not answering DevTools)' "$p"
+    return 0
+  fi
+  endpoint_owned_by "$p" "$host" "$pid" || orc=$?
+  if [ "$orc" -eq 0 ]; then
+    printf '● port %s' "$p"
+  else
+    printf '✖ port %s (answered by another process)' "$p"
+  fi
+}
+
+# One tab-separated row per profile: name, email, display name, state ("-" if stopped), canonical dir.
+profile_rows() {
+  local sessions root d cd email who state s_host s_pid s_port
+  sessions="$(list_all_sessions || true)"
+  while IFS= read -r root; do
+    [ -n "$root" ] || continue
+    for d in "$root"/.chrome-debug-*; do
+      [ -d "$d" ] || continue
+      cd="$(canonical_path "$d")"
+      IFS=$'\t' read -r email who < <(read_profile_account "$cd")
+      state="-"
+      s_host="" s_pid="" s_port=""
+      IFS=$'\t' read -r s_host s_pid s_port _ < <(printf '%s\n' "$sessions" | awk -F'\t' -v d="$cd" '$4 == d { print; exit }') || true
+      [ -n "$s_port" ] && state="$(session_state_label "$s_port" "$s_host" "$s_pid")"
+      printf '%s\t%s\t%s\t%s\t%s\n' "${cd##*/.chrome-debug-}" "${email:--}" "${who:--}" "$state" "$cd"
+    done
+  done < <(profile_roots)
+}
+
+# Percent-encode every byte except unreserved characters, so '#', '[', '?', '&'
+# and existing '%' survive being carried inside a /json/new?<url> request.
+urlencode() {
+  local LC_ALL=C s="$1" i c out=""
+  for ((i = 0; i < ${#s}; i++)); do
+    c="${s:i:1}"
+    case "$c" in
+      [a-zA-Z0-9._~-]) out+="$c" ;;
+      *) out+="$(printf '%%%02X' "'$c")" ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
+# Percent-encode a filesystem path for file:// URLs while keeping '/' delimiters.
+urlencode_path() {
+  local LC_ALL=C s="$1" i c out=""
+  for ((i = 0; i < ${#s}; i++)); do
+    c="${s:i:1}"
+    case "$c" in
+      [a-zA-Z0-9._~/-]) out+="$c" ;;
+      *) out+="$(printf '%%%02X' "'$c")" ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
+# Format a target URL or local file path for Chrome on target_host (linux|mac|windows).
+format_target_url() {
+  local arg="$1" target_host="${2:-auto}"
+  case "$arg" in
+    *://*|about:*|chrome:*|data:*|file:*) printf '%s' "$arg"; return 0 ;;
+  esac
+
+  local local_path=""
+  if [ -e "$arg" ]; then
+    local_path="$arg"
+  elif is_wsl && [[ "$arg" == [A-Za-z]:[\\/]* ]] && command -v wslpath >/dev/null 2>&1; then
+    local maybe_u
+    maybe_u="$(wslpath -u "$arg" 2>/dev/null || true)"
+    [ -n "$maybe_u" ] && [ -e "$maybe_u" ] && local_path="$maybe_u"
+  fi
+
+  if [ -n "$local_path" ]; then
+    local abs_path
+    abs_path="$(canonical_path "$local_path")"
+    if [ "$target_host" = "windows" ] && is_wsl && command -v wslpath >/dev/null 2>&1; then
+      local win_path slash_path
+      win_path="$(wslpath -w "$abs_path" 2>/dev/null || printf '%s' "$abs_path")"
+      slash_path="${win_path//\\//}"
+      case "$slash_path" in
+        [A-Za-z]:/*)
+          printf 'file:///%s%s' "${slash_path:0:2}" "$(urlencode_path "${slash_path:2}")"
+          return 0
+          ;;
+        //*)
+          printf 'file://%s' "$(urlencode_path "${slash_path#//}")"
+          return 0
+          ;;
+      esac
+    fi
+    printf 'file://%s' "$(urlencode_path "$abs_path")"
+    return 0
+  fi
+
+  case "$arg" in
+    localhost*|127.0.0.1*|\[::1\]*) printf 'http://%s' "$arg" ;;
+    *) printf 'https://%s' "$arg" ;;
+  esac
+}
+
+# Print status of a session on a given port
+print_session_status() {
+  local p="$1" custom_dir="$2" host="${3:-auto}" pid="${4:-}"
+  local rc=0
+  probe "$p" "$host" || rc=$?
+  if [ "$rc" -eq 2 ]; then
+    if [ -n "$pid" ]; then
+      echo "✖ Chrome process (pid ${pid}) on port ${p} is not answering DevTools (unreachable or port conflict)"
+      [ -n "$custom_dir" ] && echo "  Profile:   ${custom_dir}"
+      [ "$host" != "auto" ] && echo "  Host:      ${host}"
+    else
+      echo "✖ Port ${p} is in use, but not by Chrome DevTools"
+    fi
+    return 2
+  elif [ "$rc" -eq 1 ]; then
+    if [ -n "$pid" ]; then
+      echo "⚠ Chrome process (pid ${pid}) is running for port ${p}, but DevTools endpoint is not answering (starting or closed)"
+      [ -n "$custom_dir" ] && echo "  Profile:   ${custom_dir}"
+      [ "$host" != "auto" ] && echo "  Host:      ${host}"
+    else
+      echo "○ No Chrome debug session active on port ${p}"
+    fi
+    return 1
+  fi
+  # A browser process claims this port: show its tabs only if its own listener answered.
+  if [ -n "$pid" ]; then
+    local orc=0
+    endpoint_owned_by "$p" "$host" "$pid" || orc=$?
+    if [ "$orc" -ne 0 ]; then
+      if [ "$orc" -eq 2 ]; then
+        echo "✖ Port ${p} answers DevTools, but from another process, not this browser (pid ${pid})"
+      else
+        echo "✖ Port ${p} answers DevTools, but its owner could not be confirmed as this browser (pid ${pid})"
+      fi
+      [ -n "$custom_dir" ] && echo "  Profile:   ${custom_dir}"
+      [ "$host" != "auto" ] && echo "  Host:      ${host}"
+      return 2
+    fi
+  fi
+  local browser ws tabs
+  browser="$(printf '%s\n' "$VERSION_JSON" | grep -o '"Browser": *"[^"]*"' | head -1 | cut -d'"' -f4)"
+  ws="$(printf '%s\n' "$VERSION_JSON" | grep -o '"webSocketDebuggerUrl": *"[^"]*"' | head -1 | cut -d'"' -f4)"
+  echo "● Chrome debug session is ACTIVE on port ${p}"
+  if [ -n "$custom_dir" ]; then
+    echo "  Profile:   ${custom_dir}"
+  fi
+  if [ "$host" != "auto" ] && is_wsl; then
+    echo "  Host:      ${host}"
+  fi
+  echo "  Browser:   ${browser:-Chrome}"
+  echo "  Endpoint:  http://127.0.0.1:${p}"
+  echo "  WebSocket: ${ws}"
+  tabs="$(cdp GET /json/list "$p" "$host" || true)"
+  if [ -n "$tabs" ]; then
+    echo "  Open tabs:"
+    if command -v jq >/dev/null 2>&1; then
+      printf '%s\n' "$tabs" | jq -r '.[] | select(.type=="page") | "    - \(.title) [\(.url)]"'
+    else
+      printf '%s\n' "$tabs" | grep -E '"title"|"url"' | sed 's/^[[:space:]]*//' | paste - - | sed 's/^/    - /'
+    fi
+  fi
+  nat_note "$p" "$host"
+  return 0
+}
+
+# --- Status Action ------------------------------------------------------------
+if [ "$ACTION" = "status" ]; then
+  if [ "$CUSTOM_PROFILE" -eq 1 ]; then
+    prof_sessions="$(find_sessions_for_profile "$USER_DATA_DIR" || true)"
+    if [ "$PORT_SPECIFIED" -eq 1 ]; then
+      port_sessions="$(find_sessions_on_port "$PORT" || true)"
+      if [ -n "$prof_sessions" ]; then
+        IFS=$'\t' read -r s_host s_pid s_port s_dir <<< "$(printf '%s\n' "$prof_sessions" | head -1)"
+        if [ "$s_port" != "$PORT" ]; then
+          echo "Error: profile '${PROFILE_NAME}' (${USER_DATA_DIR}) is running on port ${s_port}, not port ${PORT}." >&2
+          exit 1
+        fi
+        print_session_status "$PORT" "$USER_DATA_DIR" "$s_host" "$s_pid"
+        exit $?
+      fi
+      if [ -n "$port_sessions" ]; then
+        IFS=$'\t' read -r _ _ _ other_dir <<< "$(printf '%s\n' "$port_sessions" | head -1)"
+        echo "Error: port ${PORT} belongs to ${other_dir:-another profile}, not profile '${PROFILE_NAME}' (${USER_DATA_DIR})." >&2
+        exit 1
+      fi
+      prc=0; probe "$PORT" auto || prc=$?
+      if [ "$prc" -eq 0 ]; then
+        echo "Error: port ${PORT} is answering DevTools for an unidentified session, not profile '${PROFILE_NAME}' (${USER_DATA_DIR})." >&2
+        exit 1
+      fi
+      print_session_status "$PORT" "$USER_DATA_DIR"
+      exit $?
+    fi
+
+    if [ -n "$prof_sessions" ]; then
+      IFS=$'\t' read -r s_host s_pid found_port _ <<< "$(printf '%s\n' "$prof_sessions" | head -1)"
+      print_session_status "$found_port" "$USER_DATA_DIR" "$s_host" "$s_pid"
+      exit $?
+    else
+      echo "○ No Chrome debug session active for profile '${PROFILE_NAME}' (${USER_DATA_DIR})"
+      exit 1
+    fi
+  fi
+
+  if [ "$PORT_SPECIFIED" -eq 1 ]; then
+    port_sessions="$(find_sessions_on_port "$PORT" || true)"
+    if [ -n "$port_sessions" ]; then
+      session_count="$(printf '%s\n' "$port_sessions" | wc -l | tr -d '[:space:]')"
+      if [ "$session_count" -gt 1 ]; then
+        fail_ambiguous_port "$PORT" "$port_sessions"
+      fi
+      IFS=$'\t' read -r s_host s_pid s_port s_dir <<< "$port_sessions"
+      print_session_status "$PORT" "$s_dir" "$s_host" "$s_pid"
+      exit $?
+    fi
+    print_session_status "$PORT" ""
+    exit $?
+  fi
+
+  sessions="$(list_all_sessions || true)"
+  if [ -n "$sessions" ]; then
+    first=1 any_ready=0
+    while IFS=$'\t' read -r s_host s_pid p dir; do
+      [ -z "$p" ] && continue
+      [ "$first" -eq 0 ] && echo ""
+      first=0
+      if print_session_status "$p" "$dir" "$s_host" "$s_pid"; then
+        any_ready=1
+      fi
+    done <<< "$sessions"
+    [ "$any_ready" -eq 1 ] && exit 0 || exit 1
+  else
+    print_session_status "$PORT" ""
+    exit $?
+  fi
+fi
+
+# --- List Action -------------------------------------------------------------
+if [ "$ACTION" = "list" ]; then
+  rows="$(profile_rows)"
+  if [ -z "$rows" ]; then
+    echo "No debug profiles found (looked in $(default_profile_root)/.chrome-debug-*)."
+    exit 0
+  fi
+  printf '%s\n' "$rows" | sort -t$'\t' -k1,1 -k5,5 | awk -F'\t' -v def_port="$DEFAULT_PORT" '
+    {
+      raw[NR] = $1; email[NR] = $2; who[NR] = $3; port[NR] = $4; dir[NR] = $5
+      cnt[$1]++
+    }
+    END {
+      for (i = 1; i <= NR; i++) {
+        base = (raw[i] == def_port) ? raw[i] " (default)" : raw[i]
+        name[i] = (cnt[raw[i]] > 1) ? base " (" dir[i] ")" : base
+        if (length(name[i]) > w1) w1 = length(name[i])
+        e = (email[i] == "-") ? "unknown" : email[i]
+        if (length(e) > w2) w2 = length(e)
+        if (email[i] == "-") {
+          unknown_n++
+          unknown_names = unknown_names " " name[i]
+          unknown_dirs[unknown_n] = dir[i]
+        } else {
+          users[email[i]] = users[email[i]] " " name[i]
+          n[email[i]]++
+        }
+      }
+      if (w1 < 7) w1 = 7
+      if (w2 < 7) w2 = 7
+      printf "%-" w1 "s  %-" w2 "s  %-22s  %s\n", "PROFILE", "ACCOUNT", "NAME", "STATUS"
+      for (i = 1; i <= NR; i++) {
+        e = (email[i] == "-") ? "unknown" : email[i]
+        s = (port[i] == "-") ? "○ stopped" : port[i]
+        printf "%-" w1 "s  %-" w2 "s  %-22s  %s\n", name[i], e, (who[i] == "-" ? "" : who[i]), s
+      }
+      for (e in n) if (e != "-" && n[e] > 1)
+        printf "\n⚠ %s is signed in to %d profiles:%s - reuse one instead of adding another\n", e, n[e], users[e]
+      if (unknown_n > 0) {
+        printf "\n? No account found for:%s (not signed in to Chrome). Label it with:\n", unknown_names
+        for (k = 1; k <= unknown_n; k++) {
+          printf "    echo you@gmail.com > \"%s/.account\"\n", unknown_dirs[k]
+        }
+      }
+    }'
+  exit 0
+fi
+
+# --- Stop Action --------------------------------------------------------------
+# Local browser PIDs (verified browser executables) on port p, optionally for one profile.
+find_unix_matching_pids() {
+  local p="$1" expected_dir="${2:-}"
+  list_local_sessions \
+    | awk -F'\t' -v p="$p" -v d="$expected_dir" '$3 == p && (d == "" || $4 == d) { print $2 }'
+}
+
+stop_session_on_port() {
+  local p="$1" desc="$2" target_host="${3:-auto}"
+  local expected_dir="" label="port ${p}" pid
+  [ -n "$desc" ] && expected_dir="$(canonical_path "$desc")" && label="port ${p} (${desc})"
+
+  local signalled="" kill_failed=0
+  if [ "$target_host" != "windows" ]; then
+    for pid in $(find_unix_matching_pids "$p" "$expected_dir" || true); do
+      # Re-verify right before signalling: still a browser executable on this port.
+      local_pid_matches_port "$pid" "$p" || continue
+      if kill "$pid" 2>/dev/null; then
+        signalled="${signalled} ${pid}"
+      elif pid_is_alive "$pid"; then
+        kill_failed=1
+      fi
+    done
+  fi
+
+  local win_killed="" win_failed=0
+
+  if is_wsl && { [ "$target_host" = "windows" ] || [ "$target_host" = "auto" ]; } && command -v powershell.exe >/dev/null 2>&1; then
+    local win_expected=""
+    if [ -n "$expected_dir" ] && command -v wslpath >/dev/null 2>&1; then
+      win_expected="$(wslpath -w "$expected_dir" 2>/dev/null || printf '%s' "$expected_dir")"
+    fi
+    local win_res
+    win_res="$(powershell.exe -NoProfile -Command "
+      \$expected = '${win_expected//\'/\'\'}'
+      \$procs = @(Get-CimInstance Win32_Process -Filter \"Name = 'chrome.exe'\" |
+        Where-Object {
+          \$_.CommandLine -match '(^|\s)(\x22)?--remote-debugging-port=${p}(\s|\x22|\$)' -and
+          \$_.CommandLine -notmatch '(^|\s)--type='
+        })
+      \$idSet = @{}
+      foreach (\$pr in \$procs) { \$idSet[\$pr.ProcessId] = \$true }
+      foreach (\$pr in \$procs) {
+        if (\$idSet.ContainsKey(\$pr.ParentProcessId)) { continue }
+        if (\$expected -ne '') {
+          \$dir = ''
+          if (\$pr.CommandLine -match '\x22--user-data-dir=([^\x22]+)\x22') { \$dir = \$Matches[1] }
+          elseif (\$pr.CommandLine -match '--user-data-dir=\x22([^\x22]+)\x22') { \$dir = \$Matches[1] }
+          elseif (\$pr.CommandLine -match '--user-data-dir=([^\s\x22]+)') { \$dir = \$Matches[1] }
+          if (\$dir -ne \$expected) { continue }
+        }
+        try {
+          Stop-Process -Id \$pr.ProcessId -Force -ErrorAction Stop
+          \"KILLED:\" + \$pr.ProcessId
+        } catch {
+          if (Get-Process -Id \$pr.ProcessId -ErrorAction SilentlyContinue) {
+            \"FAILED:\" + \$pr.ProcessId
+          }
+        }
+      }
+    " 2>/dev/null | tr -d '\r')" || true
+    while IFS= read -r line; do
+      case "$line" in
+        KILLED:*) win_killed="${win_killed} ${line#KILLED:}" ;;
+        FAILED:*) win_failed=1 ;;
+      esac
+    done <<< "$win_res"
+  fi
+
+  if [ -z "${signalled// /}" ] && [ -z "${win_killed// /}" ] && [ "$kill_failed" -eq 0 ] && [ "$win_failed" -eq 0 ]; then
+    # No browser of ours on this port. Never signal an unidentified listener.
+    if [ -z "$expected_dir" ]; then
+      local prc=0
+      probe "$p" "$target_host" >/dev/null 2>&1 || prc=$?
+      if [ "$prc" -eq 0 ]; then
+        echo "⚠ Port ${p} answers DevTools, but no Chrome debug browser process was found for it; nothing was stopped." >&2
+        return 1
+      fi
+    fi
+    echo "○ No Chrome debug session was running on ${label}"
+    return 0
+  fi
+
+  # Wait for the signalled browsers to exit; for a bare-port stop, also for the endpoint
+  # to close. A profile stop ignores the endpoint: once its browser is gone, anything
+  # still answering on the port belongs to another process.
+  local remaining="" rc=1 stop_deadline=$((SECONDS + 8))
+  while :; do
+    remaining=""
+    for pid in $signalled; do
+      pid_is_alive "$pid" && remaining="${remaining} ${pid}"
+    done
+    if [ -n "${win_killed// /}" ]; then
+      remaining="${remaining} $(find_sessions_on_port "$p" windows 2>/dev/null \
+        | awk -F'\t' -v d="$expected_dir" 'd == "" || $4 == d { printf "%s ", $2 }' || true)"
+    fi
+    rc=1
+    if [ -z "$expected_dir" ]; then
+      rc=0; probe "$p" "$target_host" >/dev/null 2>&1 || rc=$?
+    fi
+    [ -z "${remaining// /}" ] && [ "$rc" -ne 0 ] && break
+    [ "$SECONDS" -ge "$stop_deadline" ] && break
+    sleep 0.5
+  done
+
+  if [ "$rc" -eq 0 ] || [ -n "${remaining// /}" ] || [ "$kill_failed" -eq 1 ] || [ "$win_failed" -eq 1 ]; then
+    echo "⚠ Could not stop Chrome on ${label} (still running or answering)." >&2
+    return 1
+  fi
+  echo "✔ Stopped Chrome debug session on ${label}"
+  return 0
+}
+
+if [ "$ACTION" = "stop" ]; then
+  if [ "$CUSTOM_PROFILE" -eq 1 ]; then
+    prof_sessions="$(find_sessions_for_profile "$USER_DATA_DIR" || true)"
+    if [ "$PORT_SPECIFIED" -eq 1 ]; then
+      port_sessions="$(find_sessions_on_port "$PORT" || true)"
+      if [ -n "$prof_sessions" ]; then
+        IFS=$'\t' read -r s_host s_pid s_port _ <<< "$(printf '%s\n' "$prof_sessions" | head -1)"
+        if [ "$s_port" != "$PORT" ]; then
+          echo "Error: profile '${PROFILE_NAME}' (${USER_DATA_DIR}) is running on port ${s_port}, not port ${PORT}." >&2
+          exit 1
+        fi
+        stop_session_on_port "$PORT" "$USER_DATA_DIR" "$s_host"
+        exit $?
+      fi
+      if [ -n "$port_sessions" ]; then
+        IFS=$'\t' read -r _ _ _ other_dir <<< "$(printf '%s\n' "$port_sessions" | head -1)"
+        echo "Error: port ${PORT} belongs to ${other_dir:-another profile}, not profile '${PROFILE_NAME}' (${USER_DATA_DIR})." >&2
+        exit 1
+      fi
+      prc=0; probe "$PORT" auto || prc=$?
+      if [ "$prc" -eq 0 ]; then
+        echo "Error: port ${PORT} is answering DevTools for an unidentified session, not profile '${PROFILE_NAME}' (${USER_DATA_DIR})." >&2
+        exit 1
+      fi
+      echo "○ No Chrome debug session was running on port ${PORT} (${USER_DATA_DIR})"
+      exit 0
+    fi
+
+    if [ -n "$prof_sessions" ]; then
+      IFS=$'\t' read -r s_host s_pid found_port _ <<< "$(printf '%s\n' "$prof_sessions" | head -1)"
+      stop_session_on_port "$found_port" "$USER_DATA_DIR" "$s_host"
+      exit $?
+    else
+      echo "○ No Chrome debug session was running for profile '${PROFILE_NAME}' (${USER_DATA_DIR})"
+      exit 0
+    fi
+  fi
+
+  port_sessions="$(find_sessions_on_port "$PORT" || true)"
+  if [ -n "$port_sessions" ]; then
+    session_count="$(printf '%s\n' "$port_sessions" | wc -l | tr -d '[:space:]')"
+    if [ "$session_count" -gt 1 ]; then
+      fail_ambiguous_port "$PORT" "$port_sessions"
+    fi
+    IFS=$'\t' read -r s_host _ _ _ <<< "$port_sessions"
+    stop_session_on_port "$PORT" "" "$s_host"
+    exit $?
+  fi
+  stop_session_on_port "$PORT" "" "auto"
+  exit $?
+fi
+
+# --- Launch Lock (serialize port allocation through startup) ------------------
+# One launch per user at a time, from port selection until the browser answers or the
+# launch fails, so two launches can never claim the same free port.
+LOCK_DIR="${TMPDIR:-/tmp}/chrome-debug.lock.$(id -u)"
+LOCK_HELD=0
+LOCK_WAIT="${CHROME_DEBUG_LOCK_WAIT:-40}"
+case "$LOCK_WAIT" in ''|*[!0-9]*) LOCK_WAIT=40 ;; esac
+
+release_launch_lock() {
+  [ "$LOCK_HELD" -eq 1 ] || return 0
+  LOCK_HELD=0
+  local holder
+  holder="$(head -1 "$LOCK_DIR/pid" 2>/dev/null | tr -d '[:space:]' || true)"
+  # Never remove a lock that another invocation has taken over.
+  if [ -z "$holder" ] || [ "$holder" = "$$" ]; then
+    rm -rf "$LOCK_DIR" 2>/dev/null || true
+  fi
+}
+
+# An interrupted launch stops: each handler exits, and the EXIT trap frees the lock.
+trap release_launch_lock EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+acquire_launch_lock() {
+  local deadline=$((SECONDS + LOCK_WAIT)) holder=""
+  while :; do
+    if mkdir "$LOCK_DIR" 2>/dev/null; then
+      LOCK_HELD=1
+      printf '%s\n' "$$" > "$LOCK_DIR/pid" 2>/dev/null || true
+      return 0
+    fi
+    holder="$(head -1 "$LOCK_DIR/pid" 2>/dev/null | tr -d '[:space:]' || true)"
+    if [[ "$holder" =~ ^[0-9]+$ ]]; then
+      if ! pid_is_alive "$holder"; then
+        # The holder died without cleaning up (e.g. SIGKILL): clear its stale lock.
+        if [ "$(head -1 "$LOCK_DIR/pid" 2>/dev/null | tr -d '[:space:]' || true)" = "$holder" ]; then
+          rm -rf "$LOCK_DIR" 2>/dev/null || true
+        fi
+      fi
+    elif [ -d "$LOCK_DIR" ] && [ -n "$(find "$LOCK_DIR" -maxdepth 0 -mmin +1 2>/dev/null || true)" ]; then
+      # No holder PID for over a minute: a launch died between mkdir and writing it.
+      rm -rf "$LOCK_DIR" 2>/dev/null || true
+    fi
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      echo "Error: another chrome-debug launch (pid ${holder:-unknown}) is still in progress after ${LOCK_WAIT}s." >&2
+      echo "  Retry when it finishes. If no chrome-debug is running, remove ${LOCK_DIR}" >&2
+      return 1
+    fi
+    sleep 0.2
+  done
+}
+
+# --- Open tabs in a session that is already running ---------------------------
+open_tab() {
+  local url="$1" target_host="${2:-auto}" resp
+  url="$(format_target_url "$url" "$target_host")"
+  if resp="$(cdp PUT "/json/new?$(urlencode "$url")" "$PORT" "$target_host")" && printf '%s' "$resp" | grep -q '"id"'; then
+    echo "  Opening tab: $url"
+  else
+    echo "Error: could not open tab: $url" >&2
+    return 1
+  fi
+}
+
+attach_to_running_session() {
+  local attach_host="$1" attach_dir="$2"
+  echo "Chrome is already running in debug mode on port ${PORT}."
+  if [ -n "$attach_dir" ]; then
+    echo "  Profile:  ${attach_dir}"
+  fi
+  if [ ${#TARGET_URLS[@]} -gt 0 ]; then
+    local FAILED=0 url
+    for url in "${TARGET_URLS[@]}"; do
+      open_tab "$url" "$attach_host" || FAILED=1
+    done
+    exit "$FAILED"
+  fi
+  echo "  DevTools: http://127.0.0.1:${PORT}"
+  if [ -n "$PROFILE_NAME" ]; then
+    echo "  To open a page: chrome-debug ${PROFILE_NAME} <url>"
+  else
+    echo "  To open a page: chrome-debug <url>"
+  fi
+  nat_note "$PORT" "$attach_host"
+  exit 0
+}
+
+# --- Serialize Launch / Attach Resolution -------------------------------------
+# A launch that cannot get the lock stops here, before any port is selected.
+acquire_launch_lock || exit 1
+
+if [ "$CUSTOM_PROFILE" -eq 1 ]; then
+  prof_sessions="$(find_sessions_for_profile "$USER_DATA_DIR" || true)"
+  if [ -n "$prof_sessions" ]; then
+    IFS=$'\t' read -r s_host s_pid existing_port _ <<< "$(printf '%s\n' "$prof_sessions" | head -1)"
+    if [ "$PORT_SPECIFIED" -eq 1 ] && [ "$existing_port" != "$PORT" ]; then
+      echo "Error: profile '${PROFILE_NAME}' (${USER_DATA_DIR}) is already running on port ${existing_port}, not port ${PORT}." >&2
+      exit 1
+    fi
+    rc=0; probe "$existing_port" "$s_host" || rc=$?
+    if [ "$rc" -eq 0 ]; then
+      # Open tabs only in an endpoint whose listener is this profile's browser.
+      orc=0; endpoint_owned_by_profile "$existing_port" "$s_host" "$USER_DATA_DIR" || orc=$?
+      if [ "$orc" -eq 0 ]; then
+        PORT="$existing_port"
+        release_launch_lock
+        attach_to_running_session "$s_host" "$USER_DATA_DIR"
+      fi
+      if [ "$orc" -eq 2 ]; then
+        echo "Error: port ${existing_port} answers DevTools from another process, not the browser for profile '${PROFILE_NAME}' (${USER_DATA_DIR}, pid ${s_pid})." >&2
+      else
+        echo "Error: port ${existing_port} answers DevTools, but it could not be confirmed as the browser for profile '${PROFILE_NAME}' (${USER_DATA_DIR}, pid ${s_pid})." >&2
+      fi
+      echo "  No tabs were opened. Inspect with: chrome-debug --status" >&2
+      exit 1
+    fi
+    echo "Error: Chrome process (pid ${s_pid}) is already running for profile '${PROFILE_NAME}' (${USER_DATA_DIR}) on port ${existing_port}, but DevTools is not answering." >&2
+    exit 1
+  fi
+
+  if [ "$PORT_SPECIFIED" -eq 1 ]; then
+    port_sessions="$(find_sessions_on_port "$PORT" || true)"
+    if [ -n "$port_sessions" ]; then
+      IFS=$'\t' read -r _ _ _ other_dir <<< "$(printf '%s\n' "$port_sessions" | head -1)"
+      echo "Error: port ${PORT} is already in use by another profile (${other_dir:-unknown}), not ${USER_DATA_DIR}." >&2
+      exit 1
+    fi
+    rc=0; probe "$PORT" auto || rc=$?
+    if [ "$rc" -eq 0 ]; then
+      echo "Error: port ${PORT} is already answering DevTools for another session, not ${USER_DATA_DIR}." >&2
+      exit 1
+    elif [ "$rc" -eq 2 ]; then
+      port_conflict
+    fi
+  else
+    PORT="$(find_next_free_port "$DEFAULT_PORT")"
+  fi
+else
+  port_sessions="$(find_sessions_on_port "$PORT" || true)"
+  if [ -n "$port_sessions" ]; then
+    session_count="$(printf '%s\n' "$port_sessions" | wc -l | tr -d '[:space:]')"
+    if [ "$session_count" -gt 1 ]; then
+      fail_ambiguous_port "$PORT" "$port_sessions"
+    fi
+    IFS=$'\t' read -r s_host s_pid _ s_dir <<< "$port_sessions"
+    rc=0; probe "$PORT" "$s_host" || rc=$?
+    if [ "$rc" -eq 0 ]; then
+      release_launch_lock
+      # No profile was requested: attach to whatever answers, but name the profile only
+      # when that browser's own listener is the one answering.
+      orc=0; endpoint_owned_by "$PORT" "$s_host" "$s_pid" || orc=$?
+      if [ "$orc" -eq 0 ]; then
+        attach_to_running_session "$s_host" "${s_dir:-}"
+      fi
+      attach_to_running_session "auto" ""
+    elif [ "$rc" -eq 2 ] && [ "$PORT_SPECIFIED" -eq 0 ]; then
+      PORT="$(find_next_free_port "$((DEFAULT_PORT + 1))")"
+    elif [ "$PORT_SPECIFIED" -eq 1 ]; then
+      echo "Error: Chrome process (pid ${s_pid}) is already running on port ${PORT}, but DevTools is not answering." >&2
+      exit 1
+    fi
+  else
+    rc=0; probe "$PORT" auto || rc=$?
+    if [ "$rc" -eq 0 ]; then
+      release_launch_lock
+      attach_to_running_session "auto" ""
+    elif [ "$rc" -eq 2 ]; then
+      if [ "$PORT_SPECIFIED" -eq 1 ]; then
+        port_conflict
+      fi
+      PORT="$(find_next_free_port "$((DEFAULT_PORT + 1))")"
+    fi
+  fi
+fi
+
+# --- Require Chrome Binary ----------------------------------------------------
 if [ -z "$CHROME_BIN" ]; then
   echo "Error: Google Chrome or Chromium executable not found." >&2
-  if is_wsl; then
+  if [ -n "${CHROME_DEBUG_CHROME:-}" ]; then
+    echo "CHROME_DEBUG_CHROME is set to '${CHROME_DEBUG_CHROME}', which is not an executable file." >&2
+  elif is_wsl; then
     echo "Please install Google Chrome on Windows (e.g. C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe)" >&2
     echo "or in WSL via: sudo apt install -y google-chrome-stable" >&2
   elif is_mac; then
@@ -670,9 +1621,9 @@ if [ -z "$CHROME_BIN" ]; then
 fi
 
 # --- Configure Profile Directory and Argument Handling ------------------------
+LAUNCH_HOST="$(launch_host)"
 CHROME_ARGS=(
   "--remote-debugging-port=${PORT}"
-  "--remote-allow-origins=*"
   "--no-first-run"
   "--no-default-browser-check"
 )
@@ -682,64 +1633,83 @@ if [ "$HEADLESS" -eq 1 ]; then
 fi
 
 FORMATTED_URLS=()
+PROFILE_DIR="${USER_DATA_DIR:-$(canonical_path "$(default_profile_root)/.chrome-debug-${PORT}")}"
 if [[ "$CHROME_BIN" == *".exe" ]]; then
   # Windows Chrome under WSL: keep the debug profile on the Windows NTFS drive
   # to avoid SQLite lock issues over UNC / WSL paths.
-  if [ "$CUSTOM_PROFILE" -eq 1 ]; then
-    WIN_PROFILE="$(wslpath -w "$USER_DATA_DIR" 2>/dev/null || echo "$USER_DATA_DIR")"
-    PROFILE_DESC="$USER_DATA_DIR ($WIN_PROFILE)"
+  if [[ "$PROFILE_DIR" != *:* ]]; then
+    mkdir -p "$PROFILE_DIR"
+    WIN_PROFILE="$(wslpath -w "$PROFILE_DIR" 2>/dev/null || printf '%s' "$PROFILE_DIR")"
   else
-    WIN_USERPROFILE="$(cd /mnt/c 2>/dev/null && cmd.exe /c 'echo %USERPROFILE%' </dev/null 2>/dev/null | tr -d '\r')"
-    if [ -n "$WIN_USERPROFILE" ]; then
-      WIN_PROFILE="${WIN_USERPROFILE}\\.chrome-debug-${PORT}"
-      PROFILE_DESC="$(wslpath -u "$WIN_USERPROFILE" 2>/dev/null)/.chrome-debug-${PORT}"
-    else
-      WIN_PROFILE="$(wslpath -w "$HOME/.chrome-debug-${PORT}" 2>/dev/null)"
-      PROFILE_DESC="$HOME/.chrome-debug-${PORT}"
-    fi
+    WIN_PROFILE="$PROFILE_DIR"
   fi
+  PROFILE_DESC="$PROFILE_DIR ($WIN_PROFILE)"
   CHROME_ARGS+=("--user-data-dir=${WIN_PROFILE}")
-
-  # Local files become Windows paths; everything else gets a scheme.
-  for u in ${TARGET_URLS[@]+"${TARGET_URLS[@]}"}; do
-    if [ -e "$u" ] && command -v wslpath >/dev/null 2>&1; then
-      FORMATTED_URLS+=("$(wslpath -w "$u")")
-    else
-      FORMATTED_URLS+=("$(normalize_url "$u")")
-    fi
-  done
 else
-  PROFILE_DIR="${USER_DATA_DIR:-$HOME/.chrome-debug-${PORT}}"
   mkdir -p "$PROFILE_DIR"
   PROFILE_DESC="$PROFILE_DIR"
   CHROME_ARGS+=("--user-data-dir=${PROFILE_DIR}")
-  for u in ${TARGET_URLS[@]+"${TARGET_URLS[@]}"}; do
-    FORMATTED_URLS+=("$(normalize_url "$u")")
-  done
 fi
 
+for u in ${TARGET_URLS[@]+"${TARGET_URLS[@]}"}; do
+  FORMATTED_URLS+=("$(format_target_url "$u" "$LAUNCH_HOST")")
+done
+
 # --- Launch Chrome in Background ----------------------------------------------
+LOG_FILE="$PROFILE_DIR/chrome-debug.log"
+: > "$LOG_FILE" 2>/dev/null || LOG_FILE="/dev/null"
+CHROME_PID=""
+
 echo "Starting Chrome in debug mode on port ${PORT}..."
 if is_mac && [ "$CHROME_BIN" = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ]; then
   # launchd keeps it alive independently of the terminal
-  open -na "Google Chrome" --args "${CHROME_ARGS[@]}" ${FORMATTED_URLS[@]+"${FORMATTED_URLS[@]}"}
+  open -na "Google Chrome" --args "${CHROME_ARGS[@]}" ${FORMATTED_URLS[@]+"${FORMATTED_URLS[@]}"} 2>>"$LOG_FILE"
 else
-  nohup "$CHROME_BIN" "${CHROME_ARGS[@]}" ${FORMATTED_URLS[@]+"${FORMATTED_URLS[@]}"} </dev/null >/dev/null 2>&1 &
-  disown $! 2>/dev/null || true
+  nohup "$CHROME_BIN" "${CHROME_ARGS[@]}" ${FORMATTED_URLS[@]+"${FORMATTED_URLS[@]}"} </dev/null >"$LOG_FILE" 2>&1 &
+  CHROME_PID=$!
+  disown "$CHROME_PID" 2>/dev/null || true
 fi
 
-# --- Wait for Debug Port to Respond -------------------------------------------
+# --- Wait for Debug Port to Respond and Verify Ownership ----------------------
+# Ready means the endpoint answers AND its listening socket belongs to the browser
+# started for this profile. While the owner is unknown, keep waiting; report failure
+# rather than readiness if it never becomes known.
 READY=0
-for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
-  rc=0; probe "$PORT" || rc=$?
+OWNER_MISMATCH=0
+UNCONFIRMED=0
+OWNER_PIDS=()
+# The PID this invocation spawned is the browser itself on Linux/macOS. On WSL it is the
+# Linux-side interop process for chrome.exe, which says nothing about Windows PIDs.
+if [ -n "$CHROME_PID" ] && [ "$LAUNCH_HOST" != "windows" ]; then
+  OWNER_PIDS=("$CHROME_PID")
+fi
+DEADLINE=$((SECONDS + 12))
+while :; do
+  rc=0; probe "$PORT" "$LAUNCH_HOST" || rc=$?
   if [ "$rc" -eq 0 ]; then
-    READY=1
-    break
+    orc=0
+    endpoint_owned_by_profile "$PORT" "$LAUNCH_HOST" "$PROFILE_DIR" ${OWNER_PIDS[@]+"${OWNER_PIDS[@]}"} || orc=$?
+    if [ "$orc" -eq 0 ]; then
+      READY=1
+      break
+    elif [ "$orc" -eq 2 ]; then
+      OWNER_MISMATCH=1
+      break
+    fi
+    UNCONFIRMED=1
   fi
+  if [ -n "$CHROME_PID" ] && ! pid_is_alive "$CHROME_PID"; then
+    # The started process exited; stop waiting unless a browser for this profile remains.
+    if [ -z "$(find_sessions_for_profile "$PROFILE_DIR" "$LAUNCH_HOST" || true)" ]; then
+      break
+    fi
+  fi
+  [ "$SECONDS" -ge "$DEADLINE" ] && break
   sleep 0.5
 done
 
 if [ "$READY" -eq 1 ]; then
+  release_launch_lock
   echo "✔ Chrome debug session active on port ${PORT}"
   echo "  DevTools URL: http://127.0.0.1:${PORT}"
   echo "  Profile:      ${PROFILE_DESC}"
@@ -747,11 +1717,41 @@ if [ "$READY" -eq 1 ]; then
     echo "  Opened:       ${FORMATTED_URLS[*]}"
   fi
   echo "  (Sign-ins in this profile persist across sessions)"
-  nat_note
-else
-  echo "⚠ Chrome launched, but no DevTools endpoint answered on port ${PORT} within 10s." >&2
-  if is_wsl; then
-    echo "  Note for WSL: if Chrome opened, check 'chrome-debug --status' (NAT mode: see .wslconfig mirrored networking)." >&2
-  fi
-  exit 1
+  nat_note "$PORT" "$LAUNCH_HOST"
+  exit 0
 fi
+
+# Handle startup failure or ownership mismatch
+if [ "$OWNER_MISMATCH" -eq 1 ]; then
+  echo "Error: port ${PORT} answered DevTools from another process, not the browser started for ${PROFILE_DESC}." >&2
+elif [ "$UNCONFIRMED" -eq 1 ]; then
+  echo "Error: port ${PORT} answered DevTools, but its listener could not be confirmed as the browser started for ${PROFILE_DESC}." >&2
+else
+  echo "⚠ Chrome failed to open a DevTools endpoint on port ${PORT} within 12s." >&2
+fi
+echo "  Port:    ${PORT}" >&2
+echo "  Profile: ${PROFILE_DESC}" >&2
+if [ -s "$LOG_FILE" ] && [ "$LOG_FILE" != "/dev/null" ]; then
+  echo "  Browser output:" >&2
+  tail -n 20 "$LOG_FILE" | sed 's/^/    /' >&2
+fi
+
+# Clean up the browser this invocation started so a broken launch does not linger. The
+# stop is limited to this profile's directory, so it never touches another session.
+cleanup_failed=0
+started_sessions="$(find_sessions_for_profile "$PROFILE_DIR" "$LAUNCH_HOST" || true)"
+if [ -n "$started_sessions" ]; then
+  stop_session_on_port "$PORT" "$PROFILE_DIR" "$LAUNCH_HOST" >/dev/null 2>&1 || cleanup_failed=1
+elif [ -n "$CHROME_PID" ] && pid_is_alive "$CHROME_PID"; then
+  kill "$CHROME_PID" 2>/dev/null || cleanup_failed=1
+fi
+if [ "$cleanup_failed" -eq 1 ]; then
+  echo "  Note: failed Chrome process may still be running; inspect with 'chrome-debug --status'." >&2
+fi
+
+if is_wsl && [ "$LAUNCH_HOST" = "windows" ] && [ "$OWNER_MISMATCH" -eq 0 ] && [ "$UNCONFIRMED" -eq 0 ]; then
+  echo "  Note: Windows Chrome did not expose a DevTools listener on port ${PORT}; try another port with -p <port>." >&2
+fi
+
+release_launch_lock
+exit 1
